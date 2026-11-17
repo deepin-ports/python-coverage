@@ -1,5 +1,5 @@
 # Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-# For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+# For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
 """Tests of the helpers in goldtest.py"""
 
@@ -10,9 +10,8 @@ import re
 
 import pytest
 
-from tests.coveragetest import CoverageTest, TESTS_DIR
-from tests.goldtest import compare, gold_path
-from tests.goldtest import contains, contains_any, contains_rx, doesnt_contain
+from tests.coveragetest import TESTS_DIR, CoverageTest
+from tests.goldtest import compare, contains, contains_any, contains_rx, doesnt_contain, gold_path
 from tests.helpers import os_sep, re_line, remove_tree
 
 GOOD_GETTY = """\
@@ -31,13 +30,15 @@ are created equal.
 
 SCRUBS = [
     # Numbers don't matter when comparing.
-    (r'\d+', 'D'),
-    (r'G\w+', 'Gxxx'),
+    (r"\d+", "D"),
+    (r"G\w+", "Gxxx"),
 ]
+
 
 def path_regex(path: str) -> str:
     """Convert a file path into a regex that will match that path on any OS."""
     return re.sub(r"[/\\]", r"[/\\\\]", path.replace(".", "[.]"))
+
 
 ACTUAL_DIR = os.path.join(TESTS_DIR, "actual/testing")
 ACTUAL_GETTY_FILE = os.path.join(ACTUAL_DIR, "getty/gettysburg.txt")
@@ -47,6 +48,8 @@ GOLD_GETTY_FILE_RX = path_regex(GOLD_GETTY_FILE)
 GOLD_PATH_RX = path_regex("/tests/gold/testing/getty/gettysburg.txt")
 OUT_PATH_RX = path_regex("out/gettysburg.txt")
 
+
+@pytest.mark.xdist_group(name="compare_test")
 class CompareTest(CoverageTest):
     """Tests of goldtest.py:compare()"""
 
@@ -73,14 +76,13 @@ class CompareTest(CoverageTest):
         assert "+ Five score" in stdout
         assert re_line(rf"^:::: diff '.*{GOLD_PATH_RX}' and '{OUT_PATH_RX}'", stdout)
         assert re_line(rf"^:::: end diff '.*{GOLD_PATH_RX}' and '{OUT_PATH_RX}'", stdout)
-        assert (
-            os_sep(f"Saved actual output to '{ACTUAL_GETTY_FILE}': see tests/gold/README.rst")
-            in os_sep(stdout)
-        )
+        assert os_sep(
+            f"Saved actual output to '{ACTUAL_GETTY_FILE}': see tests/gold/README.rst"
+        ) in os_sep(stdout)
         assert "  D/D/D, Gxxx, Pennsylvania" in stdout
 
         # The actual file was saved.
-        with open(ACTUAL_GETTY_FILE) as f:
+        with open(ACTUAL_GETTY_FILE, encoding="utf-8") as f:
             saved = f.read()
         assert saved == BAD_GETTY
 
@@ -105,7 +107,8 @@ class CompareTest(CoverageTest):
         compare(gold_path("testing/getty"), "out", scrubs=SCRUBS, actual_extra=True)
 
         # But not without it:
-        msg = r"Files in out only: \['another.more'\]"
+        # (test output is in files like /tmp/pytest-of-user/pytest-0/popen-gw3/t76/out)
+        msg = r"Files in .*[/\\]t\d+[/\\]out only: \['another.more'\]"
         with pytest.raises(AssertionError, match=msg):
             compare(gold_path("testing/getty"), "out", scrubs=SCRUBS)
         self.assert_exists(os.path.join(TESTS_DIR, "actual/testing/getty/another.more"))
@@ -114,25 +117,31 @@ class CompareTest(CoverageTest):
         compare(gold_path("testing/getty"), "out", file_pattern="*.txt", scrubs=SCRUBS)
 
     def test_xml_good(self) -> None:
-        self.make_file("out/output.xml", """\
+        self.make_file(
+            "out/output.xml",
+            """\
             <?xml version="1.0" ?>
             <the_root c="three" b="222" a="one">
                 <also z="nine" x="seven" y="888">
                     Goodie
                 </also>
             </the_root>
-            """)
+            """,
+        )
         compare(gold_path("testing/xml"), "out", scrubs=SCRUBS)
 
     def test_xml_bad(self) -> None:
-        self.make_file("out/output.xml", """\
+        self.make_file(
+            "out/output.xml",
+            """\
             <?xml version="1.0" ?>
             <the_root c="nine" b="2" a="one">
                 <also z="three" x="seven" y="8">
                     Goodbye
                 </also>
             </the_root>
-            """)
+            """,
+        )
 
         # compare() raises an exception.
         gold_rx = path_regex(gold_path("testing/xml/output.xml"))

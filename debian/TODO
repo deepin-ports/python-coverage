@@ -1,7 +1,7 @@
 To Do list for Debian packaging
 ###############################
 
-:Last-Updated: 2019-01-22
+:Last-Updated: 2026-10-07
 
 To Do
 =====
@@ -28,8 +28,8 @@ Done
 ..
     Local variables:
     coding: utf-8
-    mode: rst
     mode: text
+    mode: rst
     time-stamp-format: "%:y-%02m-%02d"
     time-stamp-start: "^:Last-Updated:[ 	]+"
     time-stamp-end: "$"

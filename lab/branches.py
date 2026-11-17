@@ -1,7 +1,8 @@
 # Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-# For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+# For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
 # Demonstrate some issues with coverage.py branch testing.
+
 
 def my_function(x):
     """This isn't real code, just snippets..."""
@@ -41,7 +42,7 @@ def my_function(x):
     if x < 1000:
         # This branch is always taken
         print("x is reasonable")
-    else:   # pragma: nocover
+    else:  # pragma: nocover
         print("this never happens")
 
     # try-except structures are complex branches.  An except clause with a

@@ -3,21 +3,22 @@ Description: Omit the resource data files from Python packaging config.
  Created to avoid Python's Distutils insistence on install of
  arch-independent ‘package_data’ files in ‘/usr/lib/…’. This is a violation
  of FHS, and these files should instead go to ‘/usr/share/…’.
-Bug-Debian: http://bugs.debian.org/721676
+Bug-Debian: https://bugs.debian.org/721676
 Author: Ben Finney <bignose@debian.org>
-Last-Update: 2032-07-23
+Last-Update: 2026-09-07
 
 diff --git old/setup.py new/setup.py
 --- old/setup.py
 +++ new/setup.py
-@@ -87,7 +87,6 @@ setup_args = dict(
- 
+@@ -177,7 +177,6 @@ setup_args = dict(
+     ],
      package_data={
-         'coverage': [
--            'htmlfiles/*.*',
-             'fullcoverage/*.*',
-             'py.typed',
-         ]
+         "coverage": [
+-            "htmlfiles/*.*",
+             "py.typed",
+             f"../{PTH_NAME}",
+         ],
+
 
 Local variables:
 coding: utf-8

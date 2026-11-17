@@ -1,7 +1,9 @@
 # Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-# For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+# For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
 """A test base class for tests based on gold file comparison."""
+
+# pragma: enforce 100% coverage
 
 from __future__ import annotations
 
@@ -12,8 +14,7 @@ import os
 import os.path
 import re
 import xml.etree.ElementTree
-
-from typing import Iterable, List, Optional, Tuple
+from collections.abc import Iterable
 
 from tests.coveragetest import TESTS_DIR
 from tests.helpers import os_sep
@@ -27,9 +28,9 @@ def gold_path(path: str) -> str:
 def compare(
     expected_dir: str,
     actual_dir: str,
-    file_pattern: Optional[str] = None,
+    file_pattern: str | None = None,
     actual_extra: bool = False,
-    scrubs: Optional[List[Tuple[str, str]]] = None,
+    scrubs: list[tuple[str, str]] | None = None,
 ) -> None:
     """Compare files matching `file_pattern` in `expected_dir` and `actual_dir`.
 
@@ -44,7 +45,7 @@ def compare(
     alongside the "/gold/" directory, and an assertion will be raised.
 
     """
-    __tracebackhide__ = True    # pytest, please don't show me this function.
+    __tracebackhide__ = True  # pytest, please don't show me this function.
     assert os_sep("/gold/") in expected_dir
     assert os.path.exists(actual_dir)
     os.makedirs(expected_dir, exist_ok=True)
@@ -59,8 +60,8 @@ def compare(
         save_path = expected_dir.replace(os_sep("/gold/"), os_sep("/actual/"))
         os.makedirs(save_path, exist_ok=True)
         save_file = os.path.join(save_path, f)
-        with open(save_file, "w") as savef:
-            with open(os.path.join(actual_dir, f)) as readf:
+        with open(save_file, "w", encoding="utf-8") as savef:
+            with open(os.path.join(actual_dir, f), encoding="utf-8") as readf:
                 savef.write(readf.read())
                 print(os_sep(f"Saved actual output to '{save_file}': see tests/gold/README.rst"))
 
@@ -70,13 +71,13 @@ def compare(
     text_diff = []
     for f in diff_files:
         expected_file = os.path.join(expected_dir, f)
-        with open(expected_file) as fobj:
+        with open(expected_file, encoding="utf-8") as fobj:
             expected = fobj.read()
         if expected_file.endswith(".xml"):
             expected = canonicalize_xml(expected)
 
         actual_file = os.path.join(actual_dir, f)
-        with open(actual_file) as fobj:
+        with open(actual_file, encoding="utf-8") as fobj:
             actual = fobj.read()
         if actual_file.endswith(".xml"):
             actual = canonicalize_xml(actual)
@@ -85,12 +86,14 @@ def compare(
             expected = scrub(expected, scrubs)
             actual = scrub(actual, scrubs)
         if expected != actual:
-            text_diff.append(f'{expected_file} != {actual_file}')
+            text_diff.append(f"{expected_file} != {actual_file}")
             expected_lines = expected.splitlines()
             actual_lines = actual.splitlines()
             print(f":::: diff '{expected_file}' and '{actual_file}'")
             print("\n".join(difflib.Differ().compare(expected_lines, actual_lines)))
             print(f":::: end diff '{expected_file}' and '{actual_file}'")
+            print(f"==== expected output in '{os.path.abspath(expected_dir)}'")
+            print(f"==== actual output in '{os.path.abspath(actual_dir)}'")
             save_mismatch(f)
 
     if not actual_extra:
@@ -99,9 +102,9 @@ def compare(
 
     assert not text_diff, "Files differ: " + "\n".join(text_diff)
 
-    assert not expected_only, f"Files in {expected_dir} only: {expected_only}"
+    assert not expected_only, f"Files in {os.path.abspath(expected_dir)} only: {expected_only}"
     if not actual_extra:
-        assert not actual_only, f"Files in {actual_dir} only: {actual_only}"
+        assert not actual_only, f"Files in {os.path.abspath(actual_dir)} only: {actual_only}"
 
 
 def contains(filename: str, *strlist: str) -> None:
@@ -111,8 +114,8 @@ def contains(filename: str, *strlist: str) -> None:
     missing in `filename`.
 
     """
-    __tracebackhide__ = True    # pytest, please don't show me this function.
-    with open(filename) as fobj:
+    __tracebackhide__ = True  # pytest, please don't show me this function.
+    with open(filename, encoding="utf-8") as fobj:
         text = fobj.read()
     for s in strlist:
         assert s in text, f"Missing content in {filename}: {s!r}"
@@ -125,13 +128,11 @@ def contains_rx(filename: str, *rxlist: str) -> None:
     any lines in `filename`.
 
     """
-    __tracebackhide__ = True    # pytest, please don't show me this function.
-    with open(filename) as fobj:
+    __tracebackhide__ = True  # pytest, please don't show me this function.
+    with open(filename, encoding="utf-8") as fobj:
         lines = fobj.readlines()
     for rx in rxlist:
-        assert any(re.search(rx, line) for line in lines), (
-            f"Missing regex in {filename}: r{rx!r}"
-        )
+        assert any(re.search(rx, line) for line in lines), f"Missing regex in {filename}: r{rx!r}"
 
 
 def contains_any(filename: str, *strlist: str) -> None:
@@ -141,8 +142,8 @@ def contains_any(filename: str, *strlist: str) -> None:
     `filename`.
 
     """
-    __tracebackhide__ = True    # pytest, please don't show me this function.
-    with open(filename) as fobj:
+    __tracebackhide__ = True  # pytest, please don't show me this function.
+    with open(filename, encoding="utf-8") as fobj:
         text = fobj.read()
     for s in strlist:
         if s in text:
@@ -158,14 +159,15 @@ def doesnt_contain(filename: str, *strlist: str) -> None:
     `filename`.
 
     """
-    __tracebackhide__ = True    # pytest, please don't show me this function.
-    with open(filename) as fobj:
+    __tracebackhide__ = True  # pytest, please don't show me this function.
+    with open(filename, encoding="utf-8") as fobj:
         text = fobj.read()
     for s in strlist:
         assert s not in text, f"Forbidden content in {filename}: {s!r}"
 
 
 # Helpers
+
 
 def canonicalize_xml(xtext: str) -> str:
     """Canonicalize some XML text."""
@@ -175,7 +177,7 @@ def canonicalize_xml(xtext: str) -> str:
     return xml.etree.ElementTree.tostring(root).decode("utf-8")
 
 
-def _fnmatch_list(files: List[str], file_pattern: Optional[str]) -> List[str]:
+def _fnmatch_list(files: list[str], file_pattern: str | None) -> list[str]:
     """Filter the list of `files` to only those that match `file_pattern`.
     If `file_pattern` is None, then return the entire list of files.
     Returns a list of the filtered files.
@@ -185,7 +187,7 @@ def _fnmatch_list(files: List[str], file_pattern: Optional[str]) -> List[str]:
     return files
 
 
-def scrub(strdata: str, scrubs: Iterable[Tuple[str, str]]) -> str:
+def scrub(strdata: str, scrubs: Iterable[tuple[str, str]]) -> str:
     """Scrub uninteresting data from the payload in `strdata`.
     `scrubs` is a list of (find, replace) pairs of regexes that are used on
     `strdata`.  A string is returned.

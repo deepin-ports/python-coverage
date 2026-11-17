@@ -1,5 +1,5 @@
 .. Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-.. For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+.. For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
 .. _install:
 
@@ -84,6 +84,6 @@ You can also invoke coverage.py as a module:
 
 .. parsed-literal::
 
-    $ python -m coverage --version
+    $ python3 -m coverage --version
     Coverage.py, version |release| with C extension
     Documentation at |doc-url|

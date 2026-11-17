@@ -1,40 +1,56 @@
 /* Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0 */
-/* For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt */
+/* For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt */
 
 #ifndef _COVERAGE_UTIL_H
 #define _COVERAGE_UTIL_H
 
 #include <Python.h>
 
+#if defined(_MSC_VER) && _MSC_VER < 1939
+#define _Atomic volatile
+#define atomic_load(p) (*(p))
+#define atomic_store(p, v) _InterlockedExchange((p), (v))
+#else
+#include <stdatomic.h>
+#endif
+
 /* Compile-time debugging helpers */
-#undef WHAT_LOG         /* Define to log the WHAT params in the trace function. */
-#undef TRACE_LOG        /* Define to log our bookkeeping. */
-#undef COLLECT_STATS    /* Collect counters: stats are printed when tracer is stopped. */
-#undef DO_NOTHING       /* Define this to make the tracer do nothing. */
+#ifndef WHAT_LOG
+#define WHAT_LOG 0          /* Set to 1 to log WHAT params in the trace function. */
+#endif
+#ifndef TRACE_LOG
+#define TRACE_LOG 0         /* Set to 1 to log our bookkeeping. */
+#endif
+#ifndef COLLECT_STATS
+#define COLLECT_STATS 0     /* Set to 1 to collect and print tracer counters. */
+#endif
+#ifndef DO_NOTHING
+#define DO_NOTHING 0        /* Set to 1 to make the tracer do nothing. */
+#endif
 
 #if PY_VERSION_HEX >= 0x030B00A0
 // 3.11 moved f_lasti into an internal structure. This is totally the wrong way
 // to make this work, but it's all I've got until https://bugs.python.org/issue40421
 // is resolved.
+#if PY_VERSION_HEX < 0x030D0000
 #include <internal/pycore_frame.h>
+#endif
+
 #if PY_VERSION_HEX >= 0x030B00A7
 #define MyFrame_GetLasti(f)     (PyFrame_GetLasti(f))
 #else
 #define MyFrame_GetLasti(f)     ((f)->f_frame->f_lasti * 2)
 #endif
-#elif PY_VERSION_HEX >= 0x030A00A7
+#else
 // The f_lasti field changed meaning in 3.10.0a7. It had been bytes, but
 // now is instructions, so we need to adjust it to use it as a byte index.
 #define MyFrame_GetLasti(f)     ((f)->f_lasti * 2)
-#else
-#define MyFrame_GetLasti(f)     ((f)->f_lasti)
 #endif
 
-// Access f_code should be done through a helper starting in 3.9.
-#if PY_VERSION_HEX >= 0x03090000
-#define MyFrame_GetCode(f)      (PyFrame_GetCode(f))
+#if PY_VERSION_HEX >= 0x030D0000
+#define MyFrame_SetTrace(f, obj)    (PyObject_SetAttrString((PyObject*)(f), "f_trace", (PyObject*)(obj)))
 #else
-#define MyFrame_GetCode(f)      ((f)->f_code)
+#define MyFrame_SetTrace(f, obj)    {Py_INCREF(obj); Py_XSETREF((f)->f_trace, (PyObject*)(obj));}
 #endif
 
 #if PY_VERSION_HEX >= 0x030B00B1
@@ -47,6 +63,61 @@
 #define MyCode_GetCode(co)      ((co)->co_code)
 #define MyCode_FreeCode(code)
 #endif
+
+#if PY_VERSION_HEX >= 0x030C0000
+#define MyErr_GetRaisedException()      (PyErr_GetRaisedException())
+#define MyErr_SetRaisedException(exc)   (PyErr_SetRaisedException(exc))
+#else
+// Backports of the 3.12 API, implemented as CPython 3.12 does.
+static inline PyObject *
+MyErr_GetRaisedException(void)
+{
+    PyObject *type, *value, *tb;
+    PyErr_Fetch(&type, &value, &tb);
+    if (type == NULL) {
+        return NULL;
+    }
+    PyErr_NormalizeException(&type, &value, &tb);
+    if (tb != NULL) {
+        PyException_SetTraceback(value, tb);
+    }
+    Py_DECREF(type);
+    Py_XDECREF(tb);
+    return value;
+}
+
+static inline void
+MyErr_SetRaisedException(PyObject *exc)
+{
+    if (exc == NULL) {
+        PyErr_Clear();
+        return;
+    }
+    PyErr_Restore(Py_NewRef(Py_TYPE(exc)), exc, PyException_GetTraceback(exc));
+}
+#endif
+
+#if PY_VERSION_HEX >= 0x030D0000
+#define MyDict_GetItemRef(d, k, pv)     (PyDict_GetItemRef((d), (k), (pv)))
+#else
+// Backport of the 3.13 API.
+static inline int
+MyDict_GetItemRef(PyObject *dict, PyObject *key, PyObject **pvalue)
+{
+    *pvalue = PyDict_GetItemWithError(dict, key);
+    if (*pvalue == NULL) {
+        return PyErr_Occurred() ? -1 : 0;
+    }
+    Py_INCREF(*pvalue);
+    return 1;
+}
+#endif
+
+// Where does frame.f_lasti point when yielding from a generator?
+// It used to point at the YIELD, in 3.13 it points at the RESUME,
+// then it went back to the YIELD.
+// https://github.com/python/cpython/issues/113728
+#define ENV_LASTI_IS_YIELD ((PY_VERSION_HEX & 0xFFFF0000) != 0x030D0000)
 
 /* The values returned to indicate ok or error. */
 #define RET_OK      0

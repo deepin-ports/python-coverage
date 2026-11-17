@@ -1,5 +1,5 @@
 # Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-# For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+# For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
 """\
 Check coverage goals.
@@ -19,15 +19,16 @@ import argparse
 import json
 import sys
 
-from wcmatch import fnmatch as wcfnmatch    # python -m pip install wcmatch
+from wcmatch import fnmatch as wcfnmatch  # python -m pip install wcmatch
 
-from coverage.results import Numbers        # Note: an internal class!
+from coverage.results import Numbers  # Note: an internal class!
 
 
 def select_files(files, pat):
     flags = wcfnmatch.NEGATE | wcfnmatch.NEGATEALL
     selected = [f for f in files if wcfnmatch.fnmatch(f, pat, flags=flags)]
     return selected
+
 
 def total_for_files(data, files):
     total = Numbers(precision=3)
@@ -44,18 +45,21 @@ def total_for_files(data, files):
 
     return total
 
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--file", "-f", action="store_true", help="Check each file individually")
     parser.add_argument("--group", "-g", action="store_true", help="Check a group of files")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Be chatty about what's happening")
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Be chatty about what's happening"
+    )
     parser.add_argument("goal", type=float, help="Coverage goal")
     parser.add_argument("pattern", type=str, nargs="+", help="Patterns to check")
     args = parser.parse_args(argv)
 
     print("** Note: this is a proof-of-concept. Support is not promised. **")
     print("Read more: https://nedbatchelder.com/blog/202111/coverage_goals.html")
-    print("Feedback is appreciated: https://github.com/nedbat/coveragepy/issues/691")
+    print("Feedback is appreciated: https://github.com/coveragepy/coveragepy/issues/691")
 
     if args.file and args.group:
         print("Can't use --file and --group together")
@@ -64,7 +68,7 @@ def main(argv):
         print("Need either --file or --group")
         return 1
 
-    with open("coverage.json") as j:
+    with open("coverage.json", encoding="utf-8") as j:
         data = json.load(j)
     all_files = list(data["files"].keys())
     selected = select_files(all_files, args.pattern)
@@ -90,6 +94,7 @@ def main(argv):
                 print(result)
 
     return 0 if ok else 2
+
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

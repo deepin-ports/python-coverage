@@ -1,11 +1,15 @@
 # Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-# For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+# For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
-from typing import Any, Dict
+"""Typing information for the constructs from our .c files."""
 
-from coverage.types import TFileDisposition, TTraceData, TTraceFn, TTracer
+from typing import Any
+
+from coverage.types import TFileDisposition, Tracer, TTraceData, TTraceFn
 
 class CFileDisposition(TFileDisposition):
+    """CFileDisposition is in ctracer/filedisp.c"""
+
     canonical_filename: Any
     file_tracer: Any
     has_dynamic_filename: Any
@@ -15,7 +19,9 @@ class CFileDisposition(TFileDisposition):
     trace: Any
     def __init__(self) -> None: ...
 
-class CTracer(TTracer):
+class CTracer(Tracer):
+    """CTracer is in ctracer/tracer.c"""
+
     check_include: Any
     concur_id_func: Any
     data: TTraceData
@@ -25,11 +31,13 @@ class CTracer(TTracer):
     should_trace: Any
     should_trace_cache: Any
     switch_context: Any
+    lock_data: Any
+    unlock_data: Any
     trace_arcs: Any
     warn: Any
     def __init__(self) -> None: ...
     def activity(self) -> bool: ...
-    def get_stats(self) -> Dict[str, int]: ...
+    def get_stats(self) -> dict[str, int]: ...
     def reset_activity(self) -> Any: ...
     def start(self) -> TTraceFn: ...
     def stop(self) -> None: ...

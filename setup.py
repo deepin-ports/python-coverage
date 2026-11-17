@@ -1,172 +1,145 @@
 # Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-# For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+# For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
 """Code coverage measurement for Python"""
 
-# Distutils setup for coverage.py
+# Setuptools setup for coverage.py
 # This file is used unchanged under all versions of Python.
 
 import os
+import os.path
+import platform
+import re
 import sys
+import textwrap
+import zipfile
+from pathlib import Path
+from typing import Any
 
-# Setuptools has to be imported before distutils, or things break.
-from setuptools import setup
-from distutils.core import Extension                # pylint: disable=wrong-import-order
-from setuptools.command.build_ext import build_ext  # pylint: disable=wrong-import-order
-from distutils import errors                        # pylint: disable=wrong-import-order
+from setuptools import Extension, errors, setup
+from setuptools.command.build_ext import build_ext
+from setuptools.command.editable_wheel import editable_wheel
 
-# Get or massage our metadata.  We exec coverage/version.py so we can avoid
-# importing the product code into setup.py.
+
+def get_version_data() -> dict[str, Any]:
+    """Get the globals from coverage/version.py."""
+    # We exec coverage/version.py so we can avoid importing the product code into setup.py.
+    module_globals: dict[str, Any] = {}
+    cov_ver_py = os.path.join(os.path.split(__file__)[0], "coverage/version.py")
+    with open(cov_ver_py, encoding="utf-8") as version_file:
+        # Execute the code in version.py.
+        exec(compile(version_file.read(), cov_ver_py, "exec", dont_inherit=True), module_globals)
+    return module_globals
+
+
+def get_long_description(url: str) -> str:
+    """Massage README.rst to get the long description."""
+    with open("README.rst", encoding="utf-8") as readme:
+        readme_text = readme.read()
+
+    url = url.replace("readthedocs", "@@")
+    assert "@@" not in readme_text
+    long_description = (
+        readme_text.replace("https://coverage.readthedocs.io/en/latest", url)
+        .replace("https://coverage.readthedocs.io", url)
+        .replace("@@", "readthedocs")
+    )
+    return long_description
+
 
 # PYVERSIONS
-classifiers = """\
-Environment :: Console
-Intended Audience :: Developers
-License :: OSI Approved :: Apache Software License
-Operating System :: OS Independent
-Programming Language :: Python
-Programming Language :: Python :: 3
-Programming Language :: Python :: 3.7
-Programming Language :: Python :: 3.8
-Programming Language :: Python :: 3.9
-Programming Language :: Python :: 3.10
-Programming Language :: Python :: 3.11
-Programming Language :: Python :: 3.12
-Programming Language :: Python :: Implementation :: CPython
-Programming Language :: Python :: Implementation :: PyPy
-Topic :: Software Development :: Quality Assurance
-Topic :: Software Development :: Testing
-"""
+CLASSIFIERS = textwrap.dedent("""\
+    Development Status :: 5 - Production/Stable
+    Environment :: Console
+    Intended Audience :: Developers
+    Operating System :: OS Independent
+    Programming Language :: Python
+    Programming Language :: Python :: 3
+    Programming Language :: Python :: 3.11
+    Programming Language :: Python :: 3.12
+    Programming Language :: Python :: 3.13
+    Programming Language :: Python :: 3.14
+    Programming Language :: Python :: 3.15
+    Programming Language :: Python :: 3.16
+    Programming Language :: Python :: Free Threading :: 3 - Stable
+    Programming Language :: Python :: Implementation :: CPython
+    Programming Language :: Python :: Implementation :: PyPy
+    Topic :: Software Development :: Quality Assurance
+    Topic :: Software Development :: Testing
+""").splitlines()
 
-cov_ver_py = os.path.join(os.path.split(__file__)[0], "coverage/version.py")
-with open(cov_ver_py) as version_file:
-    # __doc__ will be overwritten by version.py.
-    doc = __doc__
-    # Keep pylint happy.
-    __version__ = __url__ = version_info = ""
-    # Execute the code in version.py.
-    exec(compile(version_file.read(), cov_ver_py, 'exec', dont_inherit=True))
 
-with open("README.rst") as readme:
-    readme_text = readme.read()
+# The names of .pth files matter because they are read in lexicographic order.
+# Editable installs work because of `__editable__*.pth` files, so we need our
+# .pth files to come after those. But we want ours to be earlyish in the
+# sequence, so we start with `a`. The metacov .pth file should come before the
+# coverage .pth file, so we use `a0_metacov.pth` and `a1_coverage.pth`.
+PTH_NAME = "a1_coverage.pth"
 
-temp_url = __url__.replace("readthedocs", "@@")
-assert "@@" not in readme_text
-long_description = (
-    readme_text
-    .replace("https://coverage.readthedocs.io/en/latest", temp_url)
-    .replace("https://coverage.readthedocs.io", temp_url)
-    .replace("@@", "readthedocs")
-)
 
-with open("CONTRIBUTORS.txt", "rb") as contributors:
-    paras = contributors.read().split(b"\n\n")
-    num_others = len(paras[-1].splitlines())
-    num_others += 1                 # Count Gareth Rees, who is mentioned in the top paragraph.
+def make_pth_file() -> None:
+    """Make the packaged .pth file used for measuring subprocess coverage."""
 
-classifier_list = classifiers.splitlines()
+    with open("coverage/pth_file.py", encoding="utf-8") as f:
+        code = f.read()
 
-if version_info[3] == 'alpha':
-    devstat = "3 - Alpha"
-elif version_info[3] in ['beta', 'candidate']:
-    devstat = "4 - Beta"
-else:
-    assert version_info[3] == 'final'
-    devstat = "5 - Production/Stable"
-classifier_list.append(f"Development Status :: {devstat}")
+    code = re.sub(r"\s*#.*\n", "\n", code)
+    code = code.replace("    ", " ").strip()
 
-# Create the keyword arguments for setup()
+    # `import sys` is needed because .pth files are executed only if they start
+    # with `import `.
+    with open(PTH_NAME, "w", encoding="utf-8") as pth_file:
+        pth_file.write(f"import sys; exec({code!r})\n")
 
-setup_args = dict(
-    name='coverage',
-    version=__version__,
 
-    packages=[
-        'coverage',
-    ],
+class EditableWheelWithPth(editable_wheel):  # type: ignore[misc]
+    """Override the editable_wheel command to insert our .pth file into the wheel."""
 
-    package_data={
-        'coverage': [
-            'htmlfiles/*.*',
-            'fullcoverage/*.*',
-            'py.typed',
-        ]
-    },
+    def run(self) -> None:
+        super().run()
+        for whl in Path(self.dist_dir).glob("*editable*.whl"):
+            with zipfile.ZipFile(whl, "a") as zf:
+                zf.write(PTH_NAME, PTH_NAME)
 
-    entry_points={
-        # Install a script as "coverage", and as "coverage3", and as
-        # "coverage-3.7" (or whatever).
-        'console_scripts': [
-            'coverage = coverage.cmdline:main',
-            'coverage%d = coverage.cmdline:main' % sys.version_info[:1],
-            'coverage-%d.%d = coverage.cmdline:main' % sys.version_info[:2],
-        ],
-    },
-
-    extras_require={
-        # Enable pyproject.toml support.
-        'toml': ['tomli; python_full_version<="3.11.0a6"'],
-    },
-
-    # We need to get HTML assets from our htmlfiles directory.
-    zip_safe=False,
-
-    author=f'Ned Batchelder and {num_others} others',
-    author_email='ned@nedbatchelder.com',
-    description=doc,
-    long_description=long_description,
-    long_description_content_type='text/x-rst',
-    keywords='code coverage testing',
-    license='Apache-2.0',
-    license_files=["LICENSE.txt"],
-    classifiers=classifier_list,
-    url="https://github.com/nedbat/coveragepy",
-    project_urls={
-        'Documentation': __url__,
-        'Funding': (
-            'https://tidelift.com/subscription/pkg/pypi-coverage' +
-            '?utm_source=pypi-coverage&utm_medium=referral&utm_campaign=pypi'
-        ),
-        'Issues': 'https://github.com/nedbat/coveragepy/issues',
-        'Mastodon': 'https://hachyderm.io/@coveragepy',
-        'Mastodon (nedbat)': 'https://hachyderm.io/@nedbat',
-    },
-    python_requires=">=3.7",    # minimum of PYVERSIONS
-)
 
 # A replacement for the build_ext command which raises a single exception
 # if the build fails, so we can fallback nicely.
 
 ext_errors = (
     errors.CCompilerError,
-    errors.DistutilsExecError,
-    errors.DistutilsPlatformError,
+    errors.ExecError,
+    errors.PlatformError,
 )
-if sys.platform == 'win32':
-    # distutils.msvc9compiler can raise an IOError when failing to
-    # find the compiler
+if sys.platform == "win32":
+    # IOError can be raised when failing to find the compiler
     ext_errors += (IOError,)
 
 
 class BuildFailed(Exception):
     """Raise this to indicate the C extension wouldn't build."""
-    def __init__(self):
+
+    def __init__(self) -> None:
         Exception.__init__(self)
-        self.cause = sys.exc_info()[1]      # work around py 2/3 different syntax
+        self.cause = sys.exception()
 
 
-class ve_build_ext(build_ext):
+class ve_build_ext(build_ext):  # type: ignore[misc]
     """Build C extensions, but fail with a straightforward exception."""
 
-    def run(self):
+    def run(self) -> None:
         """Wrap `run` with `BuildFailed`."""
         try:
             build_ext.run(self)
-        except errors.DistutilsPlatformError as exc:
+        except errors.PlatformError as exc:
             raise BuildFailed() from exc
 
-    def build_extension(self, ext):
+    def build_extension(self, ext: Any) -> None:
         """Wrap `build_extension` with `BuildFailed`."""
+        if self.compiler.compiler_type == "msvc":
+            ext.extra_compile_args = (ext.extra_compile_args or []) + [
+                "/std:c11",
+                "/experimental:c11atomics",
+            ]
         try:
             # Uncomment to test compile failure handling:
             #   raise errors.CCompilerError("OOPS")
@@ -175,39 +148,104 @@ class ve_build_ext(build_ext):
             raise BuildFailed() from exc
         except ValueError as err:
             # this can happen on Windows 64 bit, see Python issue 7511
-            if "'path'" in str(err):    # works with both py 2/3
+            if "'path'" in str(err):  # works with both py 2/3
                 raise BuildFailed() from err
             raise
 
+
+version_data = get_version_data()
+make_pth_file()
+
+
+# Create the keyword arguments for setup()
+
+setup_args = dict(
+    name="coverage",
+    version=version_data["__version__"],
+    packages=[
+        "coverage",
+    ],
+    package_data={
+        "coverage": [
+            "htmlfiles/*.*",
+            "py.typed",
+            f"../{PTH_NAME}",
+        ],
+    },
+    entry_points={
+        "console_scripts": [
+            # Install a script as "coverage".
+            "coverage = coverage.cmdline:main",
+            # And as "coverage3", and as "coverage-3.7" (or whatever), but deprecated.
+            "coverage%d = coverage.cmdline:main_deprecated" % sys.version_info[:1],
+            "coverage-%d.%d = coverage.cmdline:main_deprecated" % sys.version_info[:2],
+        ],
+    },
+    extras_require={
+        # Before Python 3.11, this installed optional toml support.
+        # 3.11 doesn't need a library for toml, but we keep the empty extra so
+        # that people who were installing with it are not broken.
+        "toml": [],
+    },
+    cmdclass={
+        "build_ext": ve_build_ext,
+        "editable_wheel": EditableWheelWithPth,
+    },
+    # We need to get HTML assets from our htmlfiles directory.
+    zip_safe=False,
+    author="Ned Batchelder and many others",
+    author_email="ned@nedbatchelder.com",
+    description=__doc__,
+    long_description=get_long_description(url=version_data["__url__"]),
+    long_description_content_type="text/x-rst",
+    keywords="code coverage testing",
+    license="Apache-2.0",
+    license_files=["LICENSE.txt", "NOTICE.txt"],
+    classifiers=CLASSIFIERS,
+    url="https://github.com/coveragepy/coveragepy",
+    project_urls={
+        "Documentation": version_data["__url__"],
+        "Funding": (
+            "https://tidelift.com/subscription/pkg/pypi-coverage"
+            + "?utm_source=pypi-coverage&utm_medium=referral&utm_campaign=pypi"
+        ),
+        "Issues": "https://github.com/coveragepy/coveragepy/issues",
+        "Mastodon": "https://hachyderm.io/@coveragepy",
+        "Mastodon (nedbat)": "https://hachyderm.io/@nedbat",
+    },
+    python_requires=">=3.11",  # minimum of PYVERSIONS
+)
+
 # There are a few reasons we might not be able to compile the C extension.
-# Figure out if we should attempt the C extension or not.
+# Figure out if we should attempt the C extension or not. Define
+# COVERAGE_DISABLE_EXTENSION in the build environment to explicitly disable the
+# extension.
 
-compile_extension = True
+compile_extension = os.getenv("COVERAGE_DISABLE_EXTENSION", None) is None
 
-if '__pypy__' in sys.builtin_module_names:
+if platform.python_implementation() == "PyPy":
     # Pypy can't compile C extensions
     compile_extension = False
 
 if compile_extension:
-    setup_args.update(dict(
-        ext_modules=[
-            Extension(
-                "coverage.tracer",
-                sources=[
-                    "coverage/ctracer/datastack.c",
-                    "coverage/ctracer/filedisp.c",
-                    "coverage/ctracer/module.c",
-                    "coverage/ctracer/tracer.c",
-                ],
-            ),
-        ],
-        cmdclass={
-            'build_ext': ve_build_ext,
-        },
-    ))
+    setup_args.update(
+        dict(
+            ext_modules=[
+                Extension(
+                    "coverage.tracer",
+                    sources=[
+                        "coverage/ctracer/datastack.c",
+                        "coverage/ctracer/filedisp.c",
+                        "coverage/ctracer/module.c",
+                        "coverage/ctracer/tracer.c",
+                    ],
+                ),
+            ],
+        ),
+    )
 
 
-def main():
+def main() -> None:
     """Actually invoke setup() with the arguments we built above."""
     # For a variety of reasons, it might not be possible to install the C
     # extension.  Try it with, and if it fails, try it without.
@@ -218,8 +256,9 @@ def main():
         exc_msg = f"{exc.__class__.__name__}: {exc.cause}"
         print(f"**\n** {msg}\n** {exc_msg}\n**")
 
-        del setup_args['ext_modules']
+        del setup_args["ext_modules"]
         setup(**setup_args)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

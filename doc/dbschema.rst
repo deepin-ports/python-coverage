@@ -1,5 +1,5 @@
 .. Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-.. For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+.. For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
 .. This file is meant to be processed with cog to insert the latest database
    schema into the docs. If it's out of date, the quality checks will fail.
@@ -11,7 +11,7 @@
 Coverage.py database schema
 ===========================
 
-.. versionadded:: 5.0
+.. version-added:: 5.0
 
 Coverage.py stores data in a SQLite database, by default called ``.coverage``.
 For most needs, the :class:`.CoverageData` API will be sufficient, and should
@@ -34,7 +34,7 @@ to:
 
     SCHEMA_VERSION = 7
 
-.. [[[end]]] (checksum: 95a75340df33237e7e9c93b02dd1814c)
+.. [[[end]]] (sum: ladTQN8zI3)
 
 You can use SQLite tools such as the :mod:`sqlite3 <python:sqlite3>` module in
 the Python standard library to access the data.  Some data is stored in a
@@ -71,6 +71,7 @@ This is the database schema:
         --  'sys_argv' text         -- The coverage command line that recorded the data.
         --  'version' text          -- The version of coverage.py that made the file.
         --  'when' text             -- Datetime when the file was created.
+        --  'hash' text             -- Hash of the data.
     );
 
     CREATE TABLE file (
@@ -116,7 +117,7 @@ This is the database schema:
         foreign key (file_id) references file (id)
     );
 
-.. [[[end]]] (checksum: 6a04d14b07f08f86cccf43056328dcb7)
+.. [[[end]]] (sum: 7dE2ATKbel)
 
 
 .. _numbits:

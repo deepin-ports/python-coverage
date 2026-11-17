@@ -1,5 +1,5 @@
 /* Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0 */
-/* For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt */
+/* For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt */
 
 /* C-based Tracer for coverage.py. */
 
@@ -25,9 +25,6 @@ pyint_as_int(PyObject * pyint, int *pint)
 
 /* Interned strings to speed GetAttr etc. */
 
-static PyObject *str_trace;
-static PyObject *str_file_tracer;
-static PyObject *str__coverage_enabled;
 static PyObject *str__coverage_plugin;
 static PyObject *str__coverage_plugin_name;
 static PyObject *str_dynamic_source_filename;
@@ -44,9 +41,6 @@ CTracer_intern_strings(void)
         goto error;                             \
     }
 
-    INTERN_STRING(str_trace, "trace")
-    INTERN_STRING(str_file_tracer, "file_tracer")
-    INTERN_STRING(str__coverage_enabled, "_coverage_enabled")
     INTERN_STRING(str__coverage_plugin, "_coverage_plugin")
     INTERN_STRING(str__coverage_plugin_name, "_coverage_plugin_name")
     INTERN_STRING(str_dynamic_source_filename, "dynamic_source_filename")
@@ -100,8 +94,11 @@ CTracer_dealloc(CTracer *self)
     Py_XDECREF(self->data);
     Py_XDECREF(self->file_tracers);
     Py_XDECREF(self->should_trace_cache);
+    Py_XDECREF(self->trace_arcs);
     Py_XDECREF(self->should_start_context);
     Py_XDECREF(self->switch_context);
+    Py_XDECREF(self->lock_data);
+    Py_XDECREF(self->unlock_data);
     Py_XDECREF(self->context);
     Py_XDECREF(self->disable_plugin);
 
@@ -141,23 +138,25 @@ static void
 CTracer_showlog(CTracer * self, int lineno, PyObject * filename, const char * msg)
 {
     if (logging) {
+        FILE *flog = fopen("/tmp/debug_trace.txt", "a");
         int depth = self->pdata_stack->depth;
-        printf("%x: %s%3d ", (int)self, indent(depth), depth);
+        fprintf(flog, "%p: %s%3d ", self, indent(depth), depth);
         if (lineno) {
-            printf("%4d", lineno);
+            fprintf(flog, "%4d", lineno);
         }
         else {
-            printf("    ");
+            fprintf(flog, "    ");
         }
         if (filename) {
             PyObject *ascii = PyUnicode_AsASCIIString(filename);
-            printf(" %s", PyBytes_AS_STRING(ascii));
+            fprintf(flog, " %s", PyBytes_AS_STRING(ascii));
             Py_DECREF(ascii);
         }
         if (msg) {
-            printf(" %s", msg);
+            fprintf(flog, " %s", msg);
         }
-        printf("\n");
+        fprintf(flog, "\n");
+        fclose(flog);
     }
 }
 
@@ -186,14 +185,14 @@ CTracer_record_pair(CTracer *self, int l1, int l2)
     // the two line numbers into one integer instead.
     // See collector.py:flush_data for the Python code that unpacks this.
     if (l1 < 0) {
-        packed |= (1LL << 40);
+        packed |= (1LL << 56);
         l1 = -l1;
     }
     if (l2 < 0) {
-        packed |= (1LL << 41);
+        packed |= (1LL << 57);
         l2 = -l2;
     }
-    packed |= (((uint64)l2) << 20) + (uint64)l1;
+    packed |= (((uint64)l2) << 28) + (uint64)l1;
     packed_obj = PyLong_FromUnsignedLongLong(packed);
     if (packed_obj == NULL) {
         goto error;
@@ -292,6 +291,17 @@ error:
     return ret;
 }
 
+// Thanks for the idea, memray!
+static inline PyCodeObject*
+MyFrame_BorrowCode(PyFrameObject* frame)
+{
+    // Return a borrowed reference.
+    PyCodeObject* pCode = PyFrame_GetCode(frame);
+    assert(Py_REFCNT(pCode) >= 2);
+    Py_DECREF(pCode);
+    return pCode;
+}
+
 /*
  * Parts of the trace function.
  */
@@ -307,7 +317,7 @@ CTracer_handle_call(CTracer *self, PyFrameObject *frame)
     PyObject * plugin = NULL;
     PyObject * plugin_name = NULL;
     PyObject * next_tracename = NULL;
-#ifdef RESUME
+#ifdef RESUME   // >=3.11
     PyObject * pCode = NULL;
 #endif
 
@@ -363,12 +373,11 @@ CTracer_handle_call(CTracer *self, PyFrameObject *frame)
     }
 
     /* Check if we should trace this line. */
-    filename = MyFrame_GetCode(frame)->co_filename;
-    disposition = PyDict_GetItem(self->should_trace_cache, filename);
+    filename = MyFrame_BorrowCode(frame)->co_filename;
+    if (MyDict_GetItemRef(self->should_trace_cache, filename, &disposition) < 0) {
+        goto error;
+    }
     if (disposition == NULL) {
-        if (PyErr_Occurred()) {
-            goto error;
-        }
         STATS( self->stats.files++; )
 
         /* We've never considered this file before. */
@@ -382,9 +391,6 @@ CTracer_handle_call(CTracer *self, PyFrameObject *frame)
         if (PyDict_SetItem(self->should_trace_cache, filename, disposition) < 0) {
             goto error;
         }
-    }
-    else {
-        Py_INCREF(disposition);
     }
 
     if (disposition == Py_None) {
@@ -435,21 +441,24 @@ CTracer_handle_call(CTracer *self, PyFrameObject *frame)
                  * warning and a traceback.
                  */
                 CTracer_disable_plugin(self, disposition);
-                /* Because we handled the error, goto ok. */
-                goto ok;
+                /* We handled the error, but the stack entry still needs to be
+                 * set up, so continue as if we aren't tracing this frame.
+                 */
+                tracename = Py_None;
             }
-            tracename = next_tracename;
+            else {
+                tracename = next_tracename;
+            }
 
             if (tracename != Py_None) {
                 /* Check the dynamic source filename against the include rules. */
                 PyObject * included = NULL;
                 int should_include;
-                included = PyDict_GetItem(self->should_trace_cache, tracename);
+                if (MyDict_GetItemRef(self->should_trace_cache, tracename, &included) < 0) {
+                    goto error;
+                }
                 if (included == NULL) {
                     PyObject * should_include_bool;
-                    if (PyErr_Occurred()) {
-                        goto error;
-                    }
                     STATS( self->stats.files++; )
                     STATS( self->stats.pycalls++; )
                     should_include_bool = PyObject_CallFunctionObjArgs(self->check_include, tracename, frame, NULL);
@@ -464,6 +473,7 @@ CTracer_handle_call(CTracer *self, PyFrameObject *frame)
                 }
                 else {
                     should_include = (included != Py_None);
+                    Py_DECREF(included);
                 }
                 if (!should_include) {
                     tracename = Py_None;
@@ -476,32 +486,63 @@ CTracer_handle_call(CTracer *self, PyFrameObject *frame)
     }
 
     if (tracename != Py_None) {
-        PyObject * file_data = PyDict_GetItem(self->data, tracename);
+        PyObject * file_data = NULL;
+        BOOL had_error = FALSE;
+        PyObject * res;
+        PyObject * exc;
+
+        res = PyObject_CallFunctionObjArgs(self->lock_data, NULL);
+        if (res == NULL) {
+            goto error;
+        }
+        Py_DECREF(res);
+
+        if (MyDict_GetItemRef(self->data, tracename, &file_data) < 0) {
+            had_error = TRUE;
+            goto unlock;
+        }
 
         if (file_data == NULL) {
-            if (PyErr_Occurred()) {
-                goto error;
-            }
             file_data = PySet_New(NULL);
             if (file_data == NULL) {
-                goto error;
+                had_error = TRUE;
+                goto unlock;
             }
             ret2 = PyDict_SetItem(self->data, tracename, file_data);
             if (ret2 < 0) {
-                goto error;
+                had_error = TRUE;
+                goto unlock;
             }
 
             /* If the disposition mentions a plugin, record that. */
             if (file_tracer != Py_None) {
                 ret2 = PyDict_SetItem(self->file_tracers, tracename, plugin_name);
                 if (ret2 < 0) {
-                    goto error;
+                    had_error = TRUE;
+                    goto unlock;
                 }
             }
         }
-        else {
-            /* PyDict_GetItem gives a borrowed reference. Own it. */
-            Py_INCREF(file_data);
+
+        unlock:
+
+        /* Python code can't be called with an exception set, so hold any
+         * error aside while unlocking.
+         */
+        exc = MyErr_GetRaisedException();
+        res = PyObject_CallFunctionObjArgs(self->unlock_data, NULL);
+        if (res == NULL) {
+            /* As with try/finally, an error while unlocking wins. */
+            Py_XDECREF(exc);
+            Py_XDECREF(file_data);
+            goto error;
+        }
+        Py_DECREF(res);
+        MyErr_SetRaisedException(exc);
+
+        if (had_error) {
+            Py_XDECREF(file_data);
+            goto error;
         }
 
         Py_XDECREF(self->pcur_entry->file_data);
@@ -514,15 +555,13 @@ CTracer_handle_call(CTracer *self, PyFrameObject *frame)
         Py_XDECREF(self->pcur_entry->file_data);
         self->pcur_entry->file_data = NULL;
         self->pcur_entry->file_tracer = Py_None;
-        frame->f_trace_lines = 0;
         SHOWLOG(PyFrame_GetLineNumber(frame), filename, "skipped");
     }
 
     self->pcur_entry->disposition = disposition;
 
     /* Make the frame right in case settrace(gettrace()) happens. */
-    Py_INCREF(self);
-    Py_XSETREF(frame->f_trace, (PyObject*)self);
+    MyFrame_SetTrace(frame, self);
 
     /* A call event is really a "start frame" event, and can happen for
      * re-entering a generator also.  How we tell the difference depends on
@@ -535,7 +574,7 @@ CTracer_handle_call(CTracer *self, PyFrameObject *frame)
      * The current opcode is guaranteed to be RESUME. The argument
      * determines what kind of resume it is.
      */
-    pCode = MyCode_GetCode(MyFrame_GetCode(frame));
+    pCode = MyCode_GetCode(MyFrame_BorrowCode(frame));
     real_call = (PyBytes_AS_STRING(pCode)[MyFrame_GetLasti(frame) + 1] == 0);
 #else
     // f_lasti is -1 for a true call, and a real byte offset for a generator re-entry.
@@ -543,13 +582,12 @@ CTracer_handle_call(CTracer *self, PyFrameObject *frame)
 #endif
 
     if (real_call) {
-        self->pcur_entry->last_line = -MyFrame_GetCode(frame)->co_firstlineno;
+        self->pcur_entry->last_line = -MyFrame_BorrowCode(frame)->co_firstlineno;
     }
     else {
         self->pcur_entry->last_line = PyFrame_GetLineNumber(frame);
     }
 
-ok:
     ret = RET_OK;
 
 error:
@@ -630,7 +668,7 @@ CTracer_handle_line(CTracer *self, PyFrameObject *frame)
 
     STATS( self->stats.lines++; )
     if (self->pdata_stack->depth >= 0) {
-        SHOWLOG(PyFrame_GetLineNumber(frame), MyFrame_GetCode(frame)->co_filename, "line");
+        SHOWLOG(PyFrame_GetLineNumber(frame), MyFrame_BorrowCode(frame)->co_filename, "line");
         if (self->pcur_entry->file_data) {
             int lineno_from = -1;
             int lineno_to = -1;
@@ -703,12 +741,12 @@ CTracer_handle_return(CTracer *self, PyFrameObject *frame)
     if (CTracer_set_pdata_stack(self) < 0) {
         goto error;
     }
-    self->pcur_entry = &self->pdata_stack->stack[self->pdata_stack->depth];
 
     if (self->pdata_stack->depth >= 0) {
+        self->pcur_entry = &self->pdata_stack->stack[self->pdata_stack->depth];
         if (self->tracing_arcs && self->pcur_entry->file_data) {
             BOOL real_return = FALSE;
-            pCode = MyCode_GetCode(MyFrame_GetCode(frame));
+            pCode = MyCode_GetCode(MyFrame_BorrowCode(frame));
             int lasti = MyFrame_GetLasti(frame);
             Py_ssize_t code_size = PyBytes_GET_SIZE(pCode);
             unsigned char * code_bytes = (unsigned char *)PyBytes_AS_STRING(pCode);
@@ -717,7 +755,10 @@ CTracer_handle_return(CTracer *self, PyFrameObject *frame)
                 real_return = TRUE;
             }
             else {
-                real_return = (code_bytes[lasti + 2] != RESUME);
+#if ENV_LASTI_IS_YIELD
+                lasti += 2;
+#endif
+                real_return = (code_bytes[lasti] != RESUME);
             }
 #else
             /* Need to distinguish between RETURN_VALUE and YIELD_VALUE. Read
@@ -737,7 +778,20 @@ CTracer_handle_return(CTracer *self, PyFrameObject *frame)
             real_return = !(is_yield || is_yield_from);
 #endif
             if (real_return) {
-                int first = MyFrame_GetCode(frame)->co_firstlineno;
+#if PY_VERSION_HEX >= 0x030E0000
+                /* Python 3.14 can report a new line only on the return event. */
+                int return_line = PyFrame_GetLineNumber(frame);
+                if (
+                    self->pcur_entry->file_tracer == Py_None &&
+                    return_line != self->pcur_entry->last_line
+                ) {
+                    if (CTracer_record_pair(self, self->pcur_entry->last_line, return_line) < 0) {
+                        goto error;
+                    }
+                    self->pcur_entry->last_line = return_line;
+                }
+#endif
+                int first = MyFrame_BorrowCode(frame)->co_firstlineno;
                 if (CTracer_record_pair(self, self->pcur_entry->last_line, -first) < 0) {
                     goto error;
                 }
@@ -760,7 +814,7 @@ CTracer_handle_return(CTracer *self, PyFrameObject *frame)
         }
 
         /* Pop the stack. */
-        SHOWLOG(PyFrame_GetLineNumber(frame), MyFrame_GetCode(frame)->co_filename, "return");
+        SHOWLOG(PyFrame_GetLineNumber(frame), MyFrame_BorrowCode(frame)->co_filename, "return");
         self->pdata_stack->depth--;
         self->pcur_entry = &self->pdata_stack->stack[self->pdata_stack->depth];
     }
@@ -785,7 +839,7 @@ CTracer_trace(CTracer *self, PyFrameObject *frame, int what, PyObject *arg_unuse
     return RET_OK;
     #endif
 
-    if (!self->started) {
+    if (!atomic_load(&self->started)) {
         /* If CTracer.stop() has been called from another thread, the tracer
            is still active in the current thread. Let's deactivate ourselves
            now. */
@@ -802,20 +856,20 @@ CTracer_trace(CTracer *self, PyFrameObject *frame, int what, PyObject *arg_unuse
     if (what <= (int)(sizeof(what_sym)/sizeof(const char *))) {
         w = what_sym[what];
     }
-    ascii = PyUnicode_AsASCIIString(MyFrame_GetCode(frame)->co_filename);
+    ascii = PyUnicode_AsASCIIString(MyFrame_BorrowCode(frame)->co_filename);
     printf("%x trace: f:%x %s @ %s %d\n", (int)self, (int)frame, what_sym[what], PyBytes_AS_STRING(ascii), PyFrame_GetLineNumber(frame));
     Py_DECREF(ascii);
     #endif
 
     #if TRACE_LOG
-    ascii = PyUnicode_AsASCIIString(MyFrame_GetCode(frame)->co_filename);
+    ascii = PyUnicode_AsASCIIString(MyFrame_BorrowCode(frame)->co_filename);
     if (strstr(PyBytes_AS_STRING(ascii), start_file) && PyFrame_GetLineNumber(frame) == start_line) {
         logging = TRUE;
     }
     Py_DECREF(ascii);
     #endif
 
-    self->activity = TRUE;
+    atomic_store(&self->activity, TRUE);
 
     switch (what) {
     case PyTrace_CALL:
@@ -863,14 +917,6 @@ cleanup:
  * means it must be callable to be used in sys.settrace().
  *
  * So we make ourself callable, equivalent to invoking our trace function.
- *
- * To help with the process of replaying stored frames, this function has an
- * optional keyword argument:
- *
- *      def CTracer_call(frame, event, arg, lineno=0)
- *
- * If provided, the lineno argument is used as the line number, and the
- * frame's f_lineno member is ignored.
  */
 static PyObject *
 CTracer_call(CTracer *self, PyObject *args, PyObject *kwds)
@@ -878,9 +924,7 @@ CTracer_call(CTracer *self, PyObject *args, PyObject *kwds)
     PyFrameObject *frame;
     PyObject *what_str;
     PyObject *arg;
-    int lineno = 0;
     int what;
-    int orig_lineno;
     PyObject *ret = NULL;
     PyObject * ascii = NULL;
 
@@ -894,10 +938,10 @@ CTracer_call(CTracer *self, PyObject *args, PyObject *kwds)
         NULL
         };
 
-    static char *kwlist[] = {"frame", "event", "arg", "lineno", NULL};
+    static char *kwlist[] = {"frame", "event", "arg", NULL};
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "O!O!O|i:Tracer_call", kwlist,
-            &PyFrame_Type, &frame, &PyUnicode_Type, &what_str, &arg, &lineno)) {
+            &PyFrame_Type, &frame, &PyUnicode_Type, &what_str, &arg)) {
         goto done;
     }
 
@@ -914,25 +958,16 @@ CTracer_call(CTracer *self, PyObject *args, PyObject *kwds)
     }
 
     #if WHAT_LOG
-    ascii = PyUnicode_AsASCIIString(MyFrame_GetCode(frame)->co_filename);
+    ascii = PyUnicode_AsASCIIString(MyFrame_BorrowCode(frame)->co_filename);
     printf("pytrace: %s @ %s %d\n", what_sym[what], PyBytes_AS_STRING(ascii), PyFrame_GetLineNumber(frame));
     Py_DECREF(ascii);
     #endif
-
-    /* Save off the frame's lineno, and use the forced one, if provided. */
-    orig_lineno = frame->f_lineno;
-    if (lineno > 0) {
-        frame->f_lineno = lineno;
-    }
 
     /* Invoke the C function, and return ourselves. */
     if (CTracer_trace(self, frame, what, arg) == RET_OK) {
         Py_INCREF(self);
         ret = (PyObject *)self;
     }
-
-    /* Clean up. */
-    frame->f_lineno = orig_lineno;
 
     /* For better speed, install ourselves the C way so that future calls go
        directly to CTracer_trace, without this intermediate function.
@@ -967,9 +1002,10 @@ done:
 static PyObject *
 CTracer_start(CTracer *self, PyObject *args_unused)
 {
+    assert(atomic_load(&self->started) == FALSE);
     PyEval_SetTrace((Py_tracefunc)CTracer_trace, (PyObject*)self);
-    self->started = TRUE;
     self->tracing_arcs = self->trace_arcs && PyObject_IsTrue(self->trace_arcs);
+    atomic_store(&self->started, TRUE);
 
     /* start() returns a trace function usable with sys.settrace() */
     Py_INCREF(self);
@@ -979,13 +1015,11 @@ CTracer_start(CTracer *self, PyObject *args_unused)
 static PyObject *
 CTracer_stop(CTracer *self, PyObject *args_unused)
 {
-    if (self->started) {
-        /* Set the started flag only. The actual call to
-           PyEval_SetTrace(NULL, NULL) is delegated to the callback
-           itself to ensure that it called from the right thread.
-           */
-        self->started = FALSE;
-    }
+    /* Set the started flag only. The actual call to
+       PyEval_SetTrace(NULL, NULL) is delegated to the callback
+       itself to ensure that it called from the right thread.
+       */
+    atomic_store(&self->started, FALSE);
 
     Py_RETURN_NONE;
 }
@@ -993,7 +1027,7 @@ CTracer_stop(CTracer *self, PyObject *args_unused)
 static PyObject *
 CTracer_activity(CTracer *self, PyObject *args_unused)
 {
-    if (self->activity) {
+    if (atomic_load(&self->activity)) {
         Py_RETURN_TRUE;
     }
     else {
@@ -1004,7 +1038,7 @@ CTracer_activity(CTracer *self, PyObject *args_unused)
 static PyObject *
 CTracer_reset_activity(CTracer *self, PyObject *args_unused)
 {
-    self->activity = FALSE;
+    atomic_store(&self->activity, FALSE);
     Py_RETURN_NONE;
 }
 
@@ -1061,6 +1095,12 @@ CTracer_members[] = {
 
     { "switch_context",     T_OBJECT, offsetof(CTracer, switch_context), 0,
             PyDoc_STR("Function for switching to a new context.") },
+
+    { "lock_data",          T_OBJECT, offsetof(CTracer, lock_data), 0,
+            PyDoc_STR("Function for locking access to self.data.") },
+
+    { "unlock_data",        T_OBJECT, offsetof(CTracer, unlock_data), 0,
+            PyDoc_STR("Function for unlocking access to self.data.") },
 
     { "disable_plugin",     T_OBJECT, offsetof(CTracer, disable_plugin), 0,
             PyDoc_STR("Function for disabling a plugin.") },

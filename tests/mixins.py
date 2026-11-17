@@ -1,5 +1,5 @@
 # Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-# For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+# For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
 """
 Test class mixins
@@ -7,19 +7,22 @@ Test class mixins
 Some of these are transitional while working toward pure-pytest style.
 """
 
+# pragma: enforce 100% coverage
+
 from __future__ import annotations
 
 import importlib
 import os
 import os.path
 import sys
-
-from typing import Any, Callable, Iterable, Iterator, Optional, Tuple, cast
+from collections.abc import Callable, Iterable
+from contextlib import chdir
+from typing import Any, cast
 
 import pytest
 
 from coverage.misc import SysModuleSaver
-from tests.helpers import change_dir, make_file, remove_tree
+from tests.helpers import make_file, remove_tree
 
 
 class PytestBase:
@@ -39,7 +42,6 @@ class PytestBase:
 
     def setUp(self) -> None:
         """Per-test initialization. Override this as you wish."""
-        pass
 
     def addCleanup(self, fn: Callable[..., None], *args: Any) -> None:
         """Like unittest's addCleanup: code to call when the test is done."""
@@ -63,12 +65,12 @@ class TempDirMixin:
     run_in_temp_dir = True
 
     @pytest.fixture(autouse=True)
-    def _temp_dir(self, tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
+    def _temp_dir(self, tmp_path_factory: pytest.TempPathFactory) -> Iterable[None]:
         """Create a temp dir for the tests, if they want it."""
         if self.run_in_temp_dir:
             tmpdir = tmp_path_factory.mktemp("t")
             self.temp_dir = str(tmpdir)
-            with change_dir(self.temp_dir):
+            with chdir(self.temp_dir):
                 # Modules should be importable from this temp directory.  We don't
                 # use '' because we make lots of different temp directories and
                 # nose's caching importer can get confused.  The full path prevents
@@ -83,7 +85,7 @@ class TempDirMixin:
         filename: str,
         text: str = "",
         bytes: bytes = b"",
-        newline: Optional[str] = None,
+        newline: str | None = None,
     ) -> str:
         """Make a file. See `tests.helpers.make_file`"""
         # pylint: disable=redefined-builtin     # bytes
@@ -131,14 +133,15 @@ class StdStreamCapturingMixin:
     invocation will only return the delta.
 
     """
+
     @pytest.fixture(autouse=True)
     def _capcapsys(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Grab the fixture so our methods can use it."""
         self.capsys = capsys
 
-    def stdouterr(self) -> Tuple[str, str]:
+    def stdouterr(self) -> tuple[str, str]:
         """Returns (out, err), two strings for stdout and stderr."""
-        return cast(Tuple[str, str], self.capsys.readouterr())
+        return cast(tuple[str, str], self.capsys.readouterr())
 
     def stdout(self) -> str:
         """Returns a string, the captured stdout."""

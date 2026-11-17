@@ -2,15 +2,10 @@ Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: Coverage.py
 Upstream-Contact: Ned Batchelder <ned@nedbatchelder.com>
 Source: https://pypi.org/project/coverage/
-Comment:
-    The pristine upstream source contains obfuscated files, that are
-    thereby not appropriate for use as source files. This violates DFSG §2.
-Files-Excluded:
-    tests/qunit/jquery.tmpl.min.js
 
 Files: *
 Copyright:
-    © 2004–2023 Ned Batchelder <ned@nedbatchelder.com>
+    © 2004–2026 Ned Batchelder <ned@nedbatchelder.com>
     © 2001 Gareth Rees
 License: Apache-2
 License-Grant:
@@ -28,7 +23,7 @@ License-Grant:
 
 Files: debian/*
 Copyright:
-    © 2008–2023 Ben Finney <bignose@debian.org>
+    © 2008–2026 Ben Finney <bignose@debian.org>
     © 2007–2008 Lars Wirzenius <liw@iki.fi>
 License: GPL-3+
 License-Grant:

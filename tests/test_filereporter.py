@@ -1,5 +1,5 @@
 # Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-# For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+# For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
 """Tests for FileReporters"""
 
@@ -9,7 +9,6 @@ import sys
 
 from coverage.plugin import FileReporter
 from coverage.python import PythonFileReporter
-
 from tests.coveragetest import CoverageTest, UsingModulesMixin
 from tests.helpers import os_sep
 
@@ -79,7 +78,8 @@ class FileReporterTest(UsingModulesMixin, CoverageTest):
         acu2 = FileReporter("aa/afile.py")
         zcu = FileReporter("aa/zfile.py")
         bcu = FileReporter("aa/bb/bfile.py")
-        assert acu == acu2 and acu <= acu2 and acu >= acu2      # pylint: disable=chained-comparison
+        # pylint: disable=chained-comparison,chained-comparison-all-equal
+        assert acu == acu2 and acu <= acu2 and acu >= acu2
         assert acu < zcu and acu <= zcu and acu != zcu
         assert zcu > acu and zcu >= acu and zcu != acu
         assert acu < bcu and acu <= bcu and acu != bcu

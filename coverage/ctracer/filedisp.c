@@ -1,5 +1,5 @@
 /* Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0 */
-/* For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt */
+/* For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt */
 
 #include "util.h"
 #include "filedisp.h"
@@ -14,6 +14,8 @@ CFileDisposition_dealloc(CFileDisposition *self)
     Py_XDECREF(self->reason);
     Py_XDECREF(self->file_tracer);
     Py_XDECREF(self->has_dynamic_filename);
+
+    Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
 static PyMemberDef

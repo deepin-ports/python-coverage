@@ -1,5 +1,5 @@
 .. Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-.. For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+.. For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
 .. _api_module:
 
@@ -26,7 +26,7 @@ available by name.
 
 A string with the version of coverage.py, for example, ``"5.0b2"``.
 
-.. autoclass:: CoverageException
+.. autoexception:: coverage.CoverageException
 
 
 Starting coverage.py automatically
@@ -35,4 +35,4 @@ Starting coverage.py automatically
 This function is used to start coverage measurement automatically when Python
 starts.  See :ref:`subprocess` for details.
 
-.. autofunction:: process_startup
+.. autofunction:: coverage.process_startup

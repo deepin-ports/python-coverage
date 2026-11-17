@@ -13,7 +13,7 @@ include /usr/share/dpkg/buildflags.mk
 
 export PYBUILD_NAME = coverage
 export PYBUILD_DISABLE = test
-export PYBUILD_SYSTEM = distutils
+export PYBUILD_SYSTEM = pyproject
 
 PYTHON3_PACKAGE_NAME = python3-${PYBUILD_NAME}
 package_working_root = debian
@@ -44,6 +44,7 @@ GENERATED_FILES += ${DOCUMENTATION_DIR}/*${manpage_tempfile_suffix}
 
 DOCUMENTATION_BUILD_DIR = ${DOCUMENTATION_DIR}/_build
 DOCUMENTATION_BUILD_HTML_DIR = ${DOCUMENTATION_BUILD_DIR}/html
+DOCUMENTATION_BUILD_PYCACHE_DIR = ${DOCUMENTATION_BUILD_HTML_DIR}/_static/__pycache__
 GENERATED_FILES += ${DOCUMENTATION_BUILD_DIR}
 
 INSTALL = install
@@ -65,7 +66,7 @@ FIX_SHEBANG = debian/fix_shebang
 
 
 %:
-	dh $@ --with python3,sphinxdoc --buildsystem=pybuild
+	dh $@ --buildsystem=pybuild
 
 
 .PHONY: manpage-aliases
@@ -90,6 +91,7 @@ override_dh_auto_build:
 	dh_auto_build --buildsystem=pybuild
 	$(SPHINX) ${SPHINX_OPTS} -bhtml ${DOCUMENTATION_DIR}/ \
 		${DOCUMENTATION_BUILD_HTML_DIR}/
+	$(RM) -r ${DOCUMENTATION_BUILD_PYCACHE_DIR}/
 
 # Upstream test suite doesn't currently run in our build environment.
 override_dh_auto_test:
@@ -125,7 +127,7 @@ override_dh_auto_clean:
 	$(RM) -r ${GENERATED_FILES}
 
 
-# Copyright © 2010–2023 Ben Finney <bignose@debian.org>
+# Copyright © 2010–2026 Ben Finney <bignose@debian.org>
 # This is free software: you may copy, modify, and/or distribute this work
 # under the terms of the GNU General Public License as published by the
 # Free Software Foundation; version 3 of that license or any later version.

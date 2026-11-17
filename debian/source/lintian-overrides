@@ -20,6 +20,12 @@ anticipated-repack-count *+dfsg1-*
 source-is-missing [tests/gold/html/*/*.html]
 very-long-line-length-in-source-file * > * [tests/gold/html/*/*.html:*]
 
+# In 2023, PyPI terminated support for OpenPGP signatures on release files
+# <URL:https://blog.pypi.org/posts/2023-05-23-removing-pgp/>.
+# We explicitly declare “pgpmode=none” in ‘debian/watch’ options.
+# Lintian should not perform this check in this case. Debian bug#1137324.
+debian-watch-does-not-check-openpgp-signature [debian/watch]
+
 
 # Local variables:
 # coding: utf-8

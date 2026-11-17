@@ -1,5 +1,5 @@
 .. Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-.. For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+.. For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
 .. _faq:
 
@@ -96,36 +96,76 @@ and then use the ``--contexts`` option when generating an HTML report.
 Q: How is the total percentage calculated?
 ..........................................
 
-Coverage.py counts the total number of possible executions. This is the number
-of executable statements minus the number of excluded statements.  It then
-counts the number of those possibilities that were actually executed.  The
-total percentage is the actual executions divided by the possible executions.
+For line coverage, coverage.py counts the total number of possible executions.
+This is the number of executable statements minus the number of excluded
+statements.  It then counts the number of those possibilities that were
+actually executed.  The total percentage is the actual executions divided by
+the possible executions.
 
 As an example, a coverage report with 1514 statements and 901 missed
 statements would calculate a total percentage of (1514-901)/1514, or 40.49%.
 
 :ref:`Branch coverage <branch>` extends the calculation to include the total
 number of possible branch exits, and the number of those taken.  In this case
-the specific numbers shown in coverage reports don't calculate out to the
-percentage shown, because the number of missing branch exits isn't reported
+the specific numbers shown in the text or HTML reports don't calculate out to
+the percentage shown, because the number of missing branch exits isn't reported
 explicitly.  A branch line that wasn't executed at all is counted once as a
 missing statement in the report, instead of as two missing branches.  Reports
 show the number of partial branches, which is the lines that were executed but
 did not execute all of their exits.
 
+The :ref:`JSON report <cmd_json>` includes more data that can be used to
+re-calculate the total percentage. Individual files have a ``summary`` key,
+and the report as a whole has a ``totals`` key that include items like these.
+The ``percent_statements_covered`` value is always included, and when branch
+coverage is measured there are matching branch values:
+
+.. code-block:: json
+
+    {
+        "covered_branches": 5,
+        "covered_lines": 9,
+        "excluded_lines": 0,
+        "missing_branches": 11,
+        "missing_lines": 105,
+        "num_branches": 16,
+        "num_partial_branches": 5,
+        "num_statements": 114,
+        "percent_covered": 10.76923076923077,
+        "percent_covered_display": "11",
+        "percent_statements_covered": 7.894736842105263,
+        "percent_statements_covered_display": "8",
+        "percent_branches_covered": 31.25,
+        "percent_branches_covered_display": "31"
+    }
+
+The total percentage is calculated as::
+
+    percent_covered =
+        (covered_lines + covered_branches) /
+        (num_statements + num_branches)
+
 
 Q: Coverage.py is much slower than I remember, what's going on?
 ...............................................................
 
-Make sure you are using the C trace function.  Coverage.py provides two
-implementations of the trace function.  The C implementation runs much faster.
-To see what you are running, use ``coverage debug sys``.  The output contains
-details of the environment, including a line that says either
-``CTracer: available`` or ``CTracer: unavailable``.  If it says unavailable,
-then you are using the slow Python implementation.
+Make sure you are using the ``ctrace`` or ``sysmon`` core for measurement.
+Coverage.py provides three different measurement cores. ``ctrace`` is the
+default in Python versions up to 3.13, but might not be installed properly, in
+which case the slower ``pytrace`` core is used.
 
-Try re-installing coverage.py to see what happened and if you get the CTracer
-as you should.
+``sysmon`` is the default in Python 3.14 and later, and is the fastest of the
+three.
+
+To see what you are running, add ``--debug=sys`` to your ``coverage run``
+command line.  The ``core=`` line will indicate which core is being used.  The
+output also includes a line that says either ``CTracer: available`` or
+``CTracer: unavailable`` showing whether the ``ctrace`` core is installed and
+usable.  If it's not, try re-installing coverage.py to see what happened and if
+you get the CTracer as you should.
+
+If needed, you can request a specific core with the ``core=`` setting.  See the
+:ref:`core configuration <config_run_core>` documentation for details.
 
 
 Q: Isn't coverage testing the best thing ever?
@@ -136,39 +176,22 @@ It's good, but `it isn't perfect`__.
 __ https://nedbatchelder.com/blog/200710/flaws_in_coverage_measurement.html
 
 
-..  Other resources
-    ---------------
-
-    There are a number of projects that help integrate coverage.py into other
-    systems:
-
-    - `trialcoverage`_ is a plug-in for Twisted trial.
-
-    .. _trialcoverage: https://pypi.org/project/trialcoverage/
-
-    - `pytest-cov`_
-
-    .. _pytest-cov: https://pypi.org/project/pytest-cov/
-
-    - `django-coverage`_ for use with Django.
-
-    .. _django-coverage: https://pypi.org/project/django-coverage/
-
-
 Q: Where can I get more help with coverage.py?
 ..............................................
 
 You can discuss coverage.py or get help using it on the `Python discussion
-forums`_.  If you ping me (``@nedbat``), there's a higher chance I'll see the
-post.
+forums`_ or in the `Python Discord`_.  If you ping me (``@nedbat``), there's a
+higher chance I'll see the post.  (`Join the Python Discord server <https://discord.com/invite/python>`_ first,
+if you haven't already.)
 
 .. _Python discussion forums: https://discuss.python.org/
+.. _Python Discord: https://discord.com/channels/267624335836053506/1253355750684753950
 
 Bug reports are gladly accepted at the `GitHub issue tracker`_.
 
-.. _GitHub issue tracker: https://github.com/nedbat/coveragepy/issues
+.. _GitHub issue tracker: https://github.com/coveragepy/coveragepy/issues
 
-`I can be reached`__ in a number of ways, I'm happy to answer questions about
+`I can be reached`__ in a number of ways. I'm happy to answer questions about
 using coverage.py.
 
 __  https://nedbatchelder.com/site/aboutned.html
@@ -183,4 +206,4 @@ Since 2004, `Ned Batchelder`_ has extended and maintained it with the help of
 
 .. _Gareth Rees: http://garethrees.org/
 .. _Ned Batchelder: https://nedbatchelder.com
-.. _many others: https://github.com/nedbat/coveragepy/blob/master/CONTRIBUTORS.txt
+.. _many others: https://github.com/coveragepy/coveragepy/blob/main/CONTRIBUTORS.txt

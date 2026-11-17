@@ -1,21 +1,22 @@
 # Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-# For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+# For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
 """Source file annotation for coverage.py."""
+
+# pragma: enforce 100% coverage
 
 from __future__ import annotations
 
 import os
 import re
-
-from typing import Iterable, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from coverage.files import flat_rootname
 from coverage.misc import ensure_dir, isolate_module
 from coverage.plugin import FileReporter
 from coverage.report_core import get_analysis_to_report
 from coverage.results import Analysis
-from coverage.types import TMorf
+from coverage.types import TMorfs
 
 if TYPE_CHECKING:
     from coverage import Coverage
@@ -48,12 +49,12 @@ class AnnotateReporter:
     def __init__(self, coverage: Coverage) -> None:
         self.coverage = coverage
         self.config = self.coverage.config
-        self.directory: Optional[str] = None
+        self.directory: str | None = None
 
     blank_re = re.compile(r"\s*(#|$)")
     else_re = re.compile(r"\s*else\s*:\s*(#|$)")
 
-    def report(self, morfs: Optional[Iterable[TMorf]], directory: Optional[str] = None) -> None:
+    def report(self, morfs: TMorfs, directory: str | None = None) -> None:
         """Run the report.
 
         See `coverage.report()` for arguments.
@@ -76,12 +77,16 @@ class AnnotateReporter:
 
         if self.directory:
             ensure_dir(self.directory)
-            dest_file = os.path.join(self.directory, flat_rootname(fr.relative_filename()))
-            if dest_file.endswith("_py"):
-                dest_file = dest_file[:-3] + ".py"
-            dest_file += ",cover"
+            rel_fname = fr.relative_filename()
+            dest_file = os.path.join(self.directory, flat_rootname(rel_fname))
+            # flat_rootname turned the dot of the extension into an underscore.
+            # Put the original extension back, whatever it is: .py, .pyw, or
+            # something a plugin measures.
+            ext = os.path.splitext(rel_fname)[1]
+            dest_file = dest_file[: len(dest_file) - len(ext)] + ext
         else:
-            dest_file = fr.filename + ",cover"
+            dest_file = fr.filename
+        dest_file += ",cover"
 
         with open(dest_file, "w", encoding="utf-8") as dest:
             i = j = 0

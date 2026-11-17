@@ -3,20 +3,23 @@ Debian source package for ‘python-coverage’
 ===========================================
 
 :Author: Ben Finney <bignose@debian.org>
-:Updated: 2021-12-26
+:Updated: 2026-10-02
 
 
-Pristine upstream source contains non-DFSG-free files
-=====================================================
+Do not propose any output from Generative AI
+============================================
 
-The pristine upstream source contains obfuscated files, that are thereby not
-appropriate for use as source files. This violates DFSG §2.
+Any contribution to this project must be created by humans. Each contribution's
+provenance for copyright purposes must be explicit and testified by the human
+proposing it. The human proposing the contribution must understand it in full,
+and be prepared to discuss the contribution meaningfully.
 
-The ‘debian/repack’ program removes those files to create the Debian upstream
-source tarball.
+Generative AI, in addition to its many ethical violations, is counter to this
+requirement and wastes everyone's time.
 
-The ‘debian/watch’ configuration specifies that ‘uscan --download’ will re-pack
-the pristine upstream tarball.
+This project rejects the use of Large Language Model (LLM) systems, or other
+Generative AI systems, and reserves the right to summarily reject any
+contribution generated this way, without further discussion.
 
 
 Package maintenance in VCS
@@ -26,29 +29,55 @@ The source for the Debian packaging is managed in the ‘main’ branch of the
 Git repository.
 
 
+Work on changes in a branch or fork
+-----------------------------------
+
+The official source repository represents the code base intended for
+publication.
+
+If you wish to propose a change to the maintainer, your changes should not be
+unilaterally pushed to the official repository. Instead:
+
+* Fork the official repository.
+
+* Create a feature branch for the changes you want to propose.
+
+* Commit a sequence of small, coherent commits, each one representing a single
+  idea, easy to review and discuss.
+
+* When your changes are ready, create a merge request, and submit it for review
+  and further change. Do not push these changes without maintainer approval.
+
+* Eventually, after review and approval, the approved merge request will be
+  merged by a maintainer to the official repository.
+
+This is equivalent to the Git “forking workflow”. For more on this, see for
+example `this lesson on the Forking Workflow (with Branching)`_.
+
+..  _this lesson on the Forking Workflow (with Branching):
+    https://git-mastery.org/lessons/forkingWorkflow/
+
+
 Work on a release in VCS
 ------------------------
 
 * Get the correct upstream source, using UScan::
 
-      $ uscan --download
+      $ uscan --download-current-version
 
 * In the ‘main’ branch, create a new Debian changelog entry.
 
-  Because the release is not complete, many aspects have not been decided and
-  should not be recorded in the VCS:
+  Because the release is not complete, its version string should have a Debian
+  packaging release string such that it will sort prior to the eventual
+  release.
 
   * The target destination (in the header) is “UNRELEASED”.
 
-  * The person and timestamp of the release is undecided, so should be empty:
-    the signature line should have no content, just the “ --” leader.
+  * The expected eventual version string (e.g. “4.2+dfsg.1-1”) should have a
+    pre-release suffix (e.g. “~pre1”) appended. The full package version, prior
+    to finalising the release, would then be e.g. “4.2+dfsg.1-1~pre1”.
 
-* While working on the package, temporarily finalise the signature line for
-  testing the build.
-
-  This ephemeral state should not be part of the VCS history, though, so do not
-  commit that finalised changelog entry; revert it to the above state to
-  continue development.
+  * This allows setting the signature line as normal during development.
 
 
 Build the source package from VCS
@@ -57,9 +86,9 @@ Build the source package from VCS
 * Ensure the ‘main’ branch contains all the changes that are intended for the
   release to Debian.
 
-* Until the work is ready for release, do not commit a finalised Debian
-  changelog entry. The changelog entry should be in the state described in
-  “Work on a release in VCS”, above.
+* Until the work is ready for release, maintain the pre-release suffix (e.g.
+  “~pre1”) on the package version string. The changelog entry should be in the
+  state described in “Work on a release in VCS”, above.
 
   This correctly leaves the decision of which destination for the upload, who
   uploads and when, to the point in time where that decision is made: the time
@@ -75,18 +104,18 @@ Build the source package from VCS
   * Set the target distribution, e.g. “unstable”.
 
   * Set the signature line containing the correct person and timestamp,
-    e.g. “Ben Finney <bignose@debian.org>  Tue, 09 Aug 2016 06:05:28 +1000”.
+    e.g. “Ben Finney <bignose@debian.org>  Tue, 09 Aug 2026 06:05:28 +1000”.
 
   * Commit the finalised changelog with a commit message of the form
     “Finalise release “4.2+dfsg.1-1”.”
 
 * Test the source package:
 
-  * Export the source package::
+  * Export the source package using ‘Git-BuildPackage’::
 
         $ gbp buildpackage -S
 
-  * Test the source package by building it in a Sbuild or Pbuilder
+  * Test the source package by building it in a SBuild or PBuilder
     environment, with all Lintian checks enabled.
 
 * Only when the package builds satisfactorily from the source package:
@@ -96,7 +125,7 @@ Build the source package from VCS
   * Pull the work-in-progress branch ‘wip/release/4.2+dfsg.1-1’ to ‘main’.
 
   * Create and sign a tag for the release, ‘release/4.2+dfsg.1-1’ with
-    the commit message “Debian release “4.2+dfsg.1-1.”::
+    the commit message “Debian release “4.2+dfsg.1-1”.”::
 
         $ git tag --sign \
             --message "Debian release “4.2+dfsg.1-1”." \
@@ -111,22 +140,9 @@ Build the source package from VCS
   * Optionally: Create a new work-in-progress for an upcoming release,
     as described in “Work on a release in VCS”, above.
 
-
-Omitted components
-==================
-
-Components that have been omitted from Debian because they do not
-constitute the source form of the work:
-
-    Files:
-        tests/qunit/*.min.js
-    Comments:
-        These files are auto-generated from a source form that is not included
-        in the work.
-
 
 ..
-    Copyright © 2013–2023 Ben Finney <bignose@debian.org>
+    Copyright © 2013–2026 Ben Finney <bignose@debian.org>
     This is free software: you may copy, modify, and/or distribute this work
     under the terms of the GNU General Public License as published by the
     Free Software Foundation; version 3 of that license or any later version.
@@ -136,7 +152,7 @@ constitute the source form of the work:
 ..
     Local variables:
     coding: utf-8
-    mode: rst
     mode: text
+    mode: rst
     End:
     vim: fileencoding=utf-8 filetype=rst :

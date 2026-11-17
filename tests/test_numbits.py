@@ -1,5 +1,5 @@
 # Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-# For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+# For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
 """Tests for coverage.numbits"""
 
@@ -7,19 +7,21 @@ from __future__ import annotations
 
 import json
 import sqlite3
-
-from typing import Iterable, Set
-
-from hypothesis import example, given, settings
-from hypothesis.strategies import sets, integers
+from collections.abc import Iterable
 
 from coverage import env
+from coverage.misc import first
 from coverage.numbits import (
-    nums_to_numbits, numbits_to_nums, numbits_union, numbits_intersection,
-    numbits_any_intersection, num_in_numbits, register_sqlite_functions,
+    num_in_numbits,
+    numbits_any_intersection,
+    numbits_intersection,
+    numbits_to_nums,
+    numbits_union,
+    nums_to_numbits,
+    register_sqlite_functions,
 )
-
 from tests.coveragetest import CoverageTest
+from tests.hypo import example, given, integers, sets, settings
 
 # Hypothesis-generated line number data
 line_numbers = integers(min_value=1, max_value=9999)
@@ -28,7 +30,7 @@ line_number_sets = sets(line_numbers)
 # When coverage-testing ourselves, hypothesis complains about a test being
 # flaky because the first run exceeds the deadline (and fails), and the second
 # run succeeds.  Disable the deadline if we are coverage-testing.
-default_settings = settings()
+default_settings = settings(deadline=400)  # milliseconds
 if env.METACOV:
     default_settings = settings(default_settings, deadline=None)
 
@@ -54,7 +56,7 @@ class NumbitsOpTest(CoverageTest):
 
     @given(line_number_sets, line_number_sets)
     @settings(default_settings)
-    def test_union(self, nums1: Set[int], nums2: Set[int]) -> None:
+    def test_union(self, nums1: set[int], nums2: set[int]) -> None:
         nb1 = nums_to_numbits(nums1)
         good_numbits(nb1)
         nb2 = nums_to_numbits(nums2)
@@ -66,7 +68,7 @@ class NumbitsOpTest(CoverageTest):
 
     @given(line_number_sets, line_number_sets)
     @settings(default_settings)
-    def test_intersection(self, nums1: Set[int], nums2: Set[int]) -> None:
+    def test_intersection(self, nums1: set[int], nums2: set[int]) -> None:
         nb1 = nums_to_numbits(nums1)
         good_numbits(nb1)
         nb2 = nums_to_numbits(nums2)
@@ -78,7 +80,7 @@ class NumbitsOpTest(CoverageTest):
 
     @given(line_number_sets, line_number_sets)
     @settings(default_settings)
-    def test_any_intersection(self, nums1: Set[int], nums2: Set[int]) -> None:
+    def test_any_intersection(self, nums1: set[int], nums2: set[int]) -> None:
         nb1 = nums_to_numbits(nums1)
         good_numbits(nb1)
         nb2 = nums_to_numbits(nums2)
@@ -110,48 +112,75 @@ class NumbitsSqliteFunctionTest(CoverageTest):
         self.cursor.execute("create table data (id int, numbits blob)")
         self.cursor.executemany(
             "insert into data (id, numbits) values (?, ?)",
-            [
-                (i, nums_to_numbits(range(i, 100, i)))
-                for i in range(1, 11)
-            ]
+            [(i, nums_to_numbits(range(i, 100, i))) for i in range(1, 11)],
         )
         self.addCleanup(self.cursor.close)
 
     def test_numbits_union(self) -> None:
         res = self.cursor.execute(
-            "select numbits_union(" +
-                "(select numbits from data where id = 7)," +
-                "(select numbits from data where id = 9)" +
-                ")"
+            "select numbits_union("
+            + "(select numbits from data where id = 7),"
+            + "(select numbits from data where id = 9)"
+            + ")",
         )
         expected = [
-            7, 9, 14, 18, 21, 27, 28, 35, 36, 42, 45, 49,
-            54, 56, 63, 70, 72, 77, 81, 84, 90, 91, 98, 99,
+            7,
+            9,
+            14,
+            18,
+            21,
+            27,
+            28,
+            35,
+            36,
+            42,
+            45,
+            49,
+            54,
+            56,
+            63,
+            70,
+            72,
+            77,
+            81,
+            84,
+            90,
+            91,
+            98,
+            99,
         ]
-        answer = numbits_to_nums(list(res)[0][0])
+        answer = numbits_to_nums(first(res)[0])
+        assert expected == answer
+
+    def test_numbits_union_aggregate(self) -> None:
+        res = self.cursor.execute(
+            "select numbits_union_agg(numbits) from data where id in (7, 9)",
+        )
+        expected = set(range(7, 100, 7)) | set(range(9, 100, 9))
+        answer = set(numbits_to_nums(first(res)[0]))
         assert expected == answer
 
     def test_numbits_intersection(self) -> None:
         res = self.cursor.execute(
-            "select numbits_intersection(" +
-                "(select numbits from data where id = 7)," +
-                "(select numbits from data where id = 9)" +
-                ")"
+            "select numbits_intersection("
+            + "(select numbits from data where id = 7),"
+            + "(select numbits from data where id = 9)"
+            + ")",
         )
-        answer = numbits_to_nums(list(res)[0][0])
+        answer = numbits_to_nums(first(res)[0])
         assert [63] == answer
 
     def test_numbits_any_intersection(self) -> None:
         res = self.cursor.execute(
             "select numbits_any_intersection(?, ?)",
-            (nums_to_numbits([1, 2, 3]), nums_to_numbits([3, 4, 5]))
+            (nums_to_numbits([1, 2, 3]), nums_to_numbits([3, 4, 5])),
         )
         answer = [any_inter for (any_inter,) in res]
         assert [1] == answer
 
         res = self.cursor.execute(
             "select numbits_any_intersection(?, ?)",
-            (nums_to_numbits([1, 2, 3]), nums_to_numbits([7, 8, 9]))
+            (nums_to_numbits([1, 2, 3]), nums_to_numbits([7, 8, 9])),
         )
         answer = [any_inter for (any_inter,) in res]
         assert [0] == answer

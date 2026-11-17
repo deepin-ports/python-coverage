@@ -1,5 +1,5 @@
 /* Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0 */
-/* For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt */
+/* For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt */
 
 #ifndef _COVERAGE_TRACER_H
 #define _COVERAGE_TRACER_H
@@ -27,14 +27,16 @@ typedef struct CTracer {
     PyObject * trace_arcs;
     PyObject * should_start_context;
     PyObject * switch_context;
+    PyObject * lock_data;
+    PyObject * unlock_data;
     PyObject * disable_plugin;
 
     /* Has the tracer been started? */
-    BOOL started;
+    _Atomic BOOL started;
     /* Are we tracing arcs, or just lines? */
     BOOL tracing_arcs;
     /* Have we had any activity? */
-    BOOL activity;
+    _Atomic BOOL activity;
     /* The current dynamic context. */
     PyObject * context;
 

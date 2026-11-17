@@ -1,8 +1,121 @@
-python-coverage (7.2.7+dfsg1-1deepin1) unstable; urgency=medium
+python-coverage (7.17.2-1deepin1) unstable; urgency=medium
 
-  * No source change upload against python 3.12.
+  * Drop unused python3-sphinxcontrib.spelling build-dependency.
 
- -- Tianyu Chen <sweetyfish@deepin.org>  Mon, 08 Jul 2024 09:54:41 +0200
+ -- purofle <purofle@gmail.com>  Tue, 17 Nov 2026 16:27:47 +0800
+
+python-coverage (7.17.2-1) unstable; urgency=medium
+
+  * The “Christine Ladd-Franklin” release.
+  * New upstream version.
+    Highlights since previous release:
+    * All upstream source is now DFSG-free.
+    * Support Python version 3.11 – 3.16.
+    * Work around a parser bug when `with` contexts are multiply nested.
+      Closes: bug#1152622. Thanks to Colin Watson for the report.
+    * Fix a resource bloat when generating text report.
+  * debian/README.source:
+    * Document our preferred VCS collaboration strategy.
+    * Document policy on use of Generative AI.
+  * debian/watch:
+    * Declare that upstream releases have no OpenPGP signature.
+  * debian/source/lintian-overrides:
+    * Override false positive check for upstream release OpenPGP signature.
+
+ -- Ben Finney <bignose@debian.org>  Fri, 06 Nov 2026 07:47:03 +1100
+
+python-coverage (7.16.1+dfsg1-1) unstable; urgency=medium
+
+  * The “Jocelyn Bell Burnell” release.
+  * New upstream version.
+    Closes: bug#1131193. Thanks to Santiago Ruano Rincón for the report.
+    Highlights since previous release:
+    * Support Python version 3.9 – 3.16.
+      Closes: bug#1068298, bug#1131832.
+      Thanks to Matthias Klose for the reports.
+    * Support configuration file `.coveragec.toml`.
+    * Reports now show separate coverage totals for statements and branches.
+    * Big speed improvement for `coverage combine`.
+    * Add configuration options `[run] core`, `[run] patch`.
+    * Add command-line options `--save-signal`, `--debug=core`.
+  * debian/*.lintian-overrides:
+    * Remove special handling for obsolete Lintian checks.
+  * debian/salsa-ci.yaml:
+    * Add pipeline definition for Salsa Continuous Integration.
+  * debian/control:
+    * Remove superfluous declaration of “Priority: optional”.
+    * Remove superfluous declaration of “Rules-Requires-Root: no”.
+    * Declare conformance to “Standards-Version: 4.7.4”.
+    * Mark dependencies that are needed only for documentation.
+      Closes: bug#1145345. Thanks to Alexandre Detiste for the report.
+    * Declare Debhelper compatibility level 14.
+    * Specify DebHelper sequence steps with specific “Build-Depends”.
+    * Specify package test suite with “Testsuite” field.
+    * Add documentation build dependency ‘python3-sphinxcontrib-linklint’.
+    * Add documentation build dependency ‘python3-sphinxext-rediraffe’.
+  * debian/rules:
+    * Build using upstream's PEP 518 (“pyproject”) build specification.
+  * debian/upstream/metadata:
+    * Update URLs for upstream project.
+  * debian/patches/*.patch:
+    * Refresh patches for new upstream version.
+
+ -- Ben Finney <bignose@debian.org>  Wed, 16 Sep 2026 08:55:34 +1000
+
+python-coverage (7.8.2+dfsg1-1) unstable; urgency=medium
+
+  * The “مریم میرزاخانی‎ (Maryam Mirzakhani)” release.
+  * New upstream version.
+    Highlights since previous release:
+    * Support Python version 3.9 – 3.14.
+    * Improvements to branch detection, avoiding some false positives
+      (incorrectly detected missing branch coverage).
+    * The `Coverage` initialiser can now receive plugin objects directly.
+    * Documentation for measuring subprocesses now emphasises correct use of
+      `multiprocessing`.
+    * Generating XML report performance improved.
+  * debian/patches/:
+    * Refresh patches for new upstream version.
+  * Declare conformance to “Standards-Version: 4.7.2”.
+    No additional changes required.
+
+ -- Ben Finney <bignose@debian.org>  Tue, 03 Jun 2025 16:31:49 +1000
+
+python-coverage (7.6.0+dfsg1-2) unstable; urgency=medium
+
+  * Remove unused “Depends: python3-pkg-resources”.
+    Closes: bug#1083621.
+  * Remove specified minimum Python version.
+    All supported Debian releases now provide Python 3.9 or later.
+
+ -- Ben Finney <bignose@debian.org>  Mon, 21 Oct 2024 13:19:25 +1100
+
+python-coverage (7.6.0+dfsg1-1) unstable; urgency=medium
+
+  * The “Margaret Hamilton” release.
+  * New upstream version.
+    Highlights since previous release:
+    * Support Python version 3.8 – 3.12.
+    * Remove deprecated ‘fullcoverage’ CPython feature.
+    * Reporting now includes coverage by function and class (in addition
+      to coverage by file). Currently in HTML and JSON reports.
+    * A module docstring is now never counted as an executable statement.
+    * Exclusion regex patterns can now be multi-line.
+    * SQLite database performance improved, by ignoring journal files.
+    * Combining data files performance improved.
+    * Generating HTML report performance improved.
+  * Update years of copyright publication.
+  * Declare conformance to “Standards-Version: 4.7.0”.
+    No additional changes required.
+  * debian/control:
+    * Add “Build-Depends: python3-sphinx-code-tabs”.
+    * Remove obsolete “Build-Depends: python3-sphinx-tabs”.
+    * Explicitly declare build dependency for PyBuild PEP 517 support.
+    * Declare minimum supported Python 3 version.
+  * debian/rules:
+    * Clean auto-generated Python cache from the documentation.
+
+ -- Ben Finney <bignose@debian.org>  Tue, 23 Jul 2024 13:05:27 +1000
 
 python-coverage (7.2.7+dfsg1-1) unstable; urgency=medium
 

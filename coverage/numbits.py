@@ -1,5 +1,5 @@
 # Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-# For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+# For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
 """
 Functions to manipulate packed binary representations of number sets.
@@ -14,13 +14,14 @@ the future.  Use these functions to work with those binary blobs of data.
 
 """
 
+# pragma: enforce 100% coverage
+
 from __future__ import annotations
 
 import json
 import sqlite3
-
+from collections.abc import Iterable
 from itertools import zip_longest
-from typing import Iterable, List
 
 
 def nums_to_numbits(nums: Iterable[int]) -> bytes:
@@ -39,11 +40,11 @@ def nums_to_numbits(nums: Iterable[int]) -> bytes:
         return b""
     b = bytearray(nbytes)
     for num in nums:
-        b[num//8] |= 1 << num % 8
+        b[num // 8] |= 1 << num % 8
     return bytes(b)
 
 
-def numbits_to_nums(numbits: bytes) -> List[int]:
+def numbits_to_nums(numbits: bytes) -> list[int]:
     """Convert a numbits into a list of numbers.
 
     Arguments:
@@ -59,7 +60,7 @@ def numbits_to_nums(numbits: bytes) -> List[int]:
     nums = []
     for byte_i, byte in enumerate(numbits):
         for bit_i in range(8):
-            if (byte & (1 << bit_i)):
+            if byte & (1 << bit_i):
                 nums.append(byte_i * 8 + bit_i)
     return nums
 
@@ -110,6 +111,23 @@ def num_in_numbits(num: int, numbits: bytes) -> bool:
     return bool(numbits[nbyte] & (1 << nbit))
 
 
+class NumbitsUnionAgg:
+    """SQLite aggregate function for computing union of numbits."""
+
+    def __init__(self) -> None:
+        self.result = 0
+        self.result_nbytes = 0
+
+    def step(self, value: bytes) -> None:
+        """Process one value in the aggregation."""
+        self.result |= int.from_bytes(value, "little")
+        self.result_nbytes = max(self.result_nbytes, len(value))
+
+    def finalize(self) -> bytes:
+        """Return the final aggregated result."""
+        return self.result.to_bytes(self.result_nbytes, "little")
+
+
 def register_sqlite_functions(connection: sqlite3.Connection) -> None:
     """
     Define numbits functions in a SQLite connection.
@@ -145,3 +163,4 @@ def register_sqlite_functions(connection: sqlite3.Connection) -> None:
     connection.create_function("numbits_any_intersection", 2, numbits_any_intersection)
     connection.create_function("num_in_numbits", 2, num_in_numbits)
     connection.create_function("numbits_to_nums", 1, lambda b: json.dumps(numbits_to_nums(b)))
+    connection.create_aggregate("numbits_union_agg", 1, NumbitsUnionAgg)  # type: ignore[arg-type]

@@ -1,21 +1,22 @@
 # Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-# For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+# For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
 """Tests for coverage.py's improved tokenizer."""
 
+from __future__ import annotations
+
 import os.path
 import re
+import sys
 import textwrap
 import warnings
 
 import pytest
 
 from coverage import env
-from coverage.phystokens import source_token_lines, source_encoding
+from coverage.phystokens import source_encoding, source_token_lines
 from coverage.python import get_python_source
-
-from tests.coveragetest import CoverageTest, TESTS_DIR
-
+from tests.coveragetest import TESTS_DIR, CoverageTest
 
 # A simple program and its token stream.
 SIMPLE = """\
@@ -25,11 +26,19 @@ def foo():
 """
 
 SIMPLE_TOKENS = [
-    [('com', "# yay!")],
-    [('key', 'def'), ('ws', ' '), ('nam', 'foo'), ('op', '('), ('op', ')'), ('op', ':')],
-    [('ws', '  '), ('nam', 'say'), ('op', '('),
-        ('str', "'two = %d'"), ('ws', ' '), ('op', '%'),
-        ('ws', ' '), ('num', '2'), ('op', ')')],
+    [("com", "# yay!")],
+    [("key", "def"), ("ws", " "), ("nam", "foo"), ("op", "("), ("op", ")"), ("op", ":")],
+    [
+        ("ws", "  "),
+        ("nam", "say"),
+        ("op", "("),
+        ("str", "'two = %d'"),
+        ("ws", " "),
+        ("op", "%"),
+        ("ws", " "),
+        ("num", "2"),
+        ("op", ")"),
+    ],
 ]
 
 # Mixed-white-space program, and its token stream.
@@ -40,18 +49,19 @@ def hello():
 """
 
 MIXED_WS_TOKENS = [
-    [('key', 'def'), ('ws', ' '), ('nam', 'hello'), ('op', '('), ('op', ')'), ('op', ':')],
-    [('ws', '        '), ('nam', 'a'), ('op', '='), ('str', '"Hello world!"')],
-    [('ws', '        '), ('nam', 'b'), ('op', '='), ('str', '"indented"')],
+    [("key", "def"), ("ws", " "), ("nam", "hello"), ("op", "("), ("op", ")"), ("op", ":")],
+    [("ws", "        "), ("nam", "a"), ("op", "="), ("str", '"Hello world!"')],
+    [("ws", "        "), ("nam", "b"), ("op", "="), ("str", '"indented"')],
 ]
 
-# https://github.com/nedbat/coveragepy/issues/822
+# https://github.com/coveragepy/coveragepy/issues/822
 BUG_822 = """\
 print( "Message 1" )
 array = [ 1,2,3,4,       # 4 numbers \\
           5,6,7 ]        # 3 numbers
 print( "Message 2" )
 """
+
 
 class PhysTokensTest(CoverageTest):
     """Tests for coverage.py's improved tokenizer."""
@@ -66,7 +76,7 @@ class PhysTokensTest(CoverageTest):
             tokenized += text + "\n"
         # source_token_lines doesn't preserve trailing spaces, so trim all that
         # before comparing.
-        source = source.replace('\r\n', '\n')
+        source = source.replace("\r\n", "\n")
         source = re.sub(r"(?m)[ \t]+$", "", source)
         tokenized = re.sub(r"(?m)[ \t]+$", "", tokenized)
         assert source == tokenized
@@ -95,10 +105,44 @@ class PhysTokensTest(CoverageTest):
         real_file = os.path.join(TESTS_DIR, "test_coverage.py")
         self.check_file_tokenization(real_file)
 
-    @pytest.mark.parametrize("fname", [
-        "stress_phystoken.tok",
-        "stress_phystoken_dos.tok",
-    ])
+    def test_1828(self) -> None:
+        # https://github.com/coveragepy/coveragepy/pull/1828
+        tokens = list(
+            source_token_lines(
+                textwrap.dedent("""
+                    x = \\
+                        1
+                    a = ["aaa",\\
+                         "bbb \\
+                         ccc"]
+                """)
+            )
+        )
+        assert tokens == [
+            [],
+            [("nam", "x"), ("ws", " "), ("op", "="), ("ws", " "), ("xx", "\\")],
+            [("ws", "    "), ("num", "1")],
+            [
+                ("nam", "a"),
+                ("ws", " "),
+                ("op", "="),
+                ("ws", " "),
+                ("op", "["),
+                ("str", '"aaa"'),
+                ("op", ","),
+                ("xx", "\\"),
+            ],
+            [("ws", "     "), ("str", '"bbb \\')],
+            [("str", '     ccc"'), ("op", "]")],
+        ]
+
+    @pytest.mark.parametrize(
+        "fname",
+        [
+            "stress_phystoken.tok",
+            "stress_phystoken_dos.tok",
+        ],
+    )
     def test_stress(self, fname: str) -> None:
         # Check the tokenization of the stress-test files.
         # And check that those files haven't been incorrectly "fixed".
@@ -107,16 +151,41 @@ class PhysTokensTest(CoverageTest):
 
             stress = os.path.join(TESTS_DIR, fname)
             self.check_file_tokenization(stress)
-            with open(stress) as fstress:
+            with open(stress, encoding="utf-8") as fstress:
                 assert re.search(r"(?m) $", fstress.read()), f"{stress} needs a trailing space."
 
-@pytest.mark.skipif(not env.PYBEHAVIOR.soft_keywords, reason="Soft keywords are new in Python 3.10")
+    def test_fstring_middle(self) -> None:
+        tokens = list(
+            source_token_lines(
+                textwrap.dedent("""\
+                    f'Look: {x} {{x}}!'
+                """)
+            )
+        )
+        if env.PYBEHAVIOR.fstring_syntax:
+            assert tokens == [
+                [
+                    ("fst", "f'"),
+                    ("fst", "Look: "),
+                    ("op", "{"),
+                    ("nam", "x"),
+                    ("op", "}"),
+                    ("fst", " {{"),
+                    ("fst", "x}}"),
+                    ("fst", "!"),
+                    ("fst", "'"),
+                ],
+            ]
+        else:
+            assert tokens == [[("str", "f'Look: {x} {{x}}!'")]]
+
+
 class SoftKeywordTest(CoverageTest):
     """Tests the tokenizer handling soft keywords."""
 
     run_in_temp_dir = False
 
-    def test_soft_keywords(self) -> None:
+    def test_soft_keywords_match_case(self) -> None:
         source = textwrap.dedent("""\
             match re.match(something):
                 case ["what"]:
@@ -145,6 +214,30 @@ class SoftKeywordTest(CoverageTest):
         assert tokens[10][2] == ("nam", "match")
         assert tokens[11][3] == ("nam", "case")
 
+    @pytest.mark.skipif(sys.version_info < (3, 12), reason="type isn't a soft keyword until 3.12")
+    def test_soft_keyword_type(self) -> None:
+        source = textwrap.dedent("""\
+            type Point = tuple[float, float]
+            type(int)
+            """)
+        tokens = list(source_token_lines(source))
+        assert tokens[0][0] == ("key", "type")
+        assert tokens[1][0] == ("nam", "type")
+
+    @pytest.mark.skipif(sys.version_info < (3, 15), reason="lazy isn't a soft keyword until 3.15")
+    def test_soft_keyword_lazy(self) -> None:
+        source = textwrap.dedent("""\
+            lazy import foo
+            lazy from foo import bar
+            def lazy(f): pass
+            lazy(12)
+            """)
+        tokens = list(source_token_lines(source))
+        assert tokens[0][0] == ("key", "lazy")
+        assert tokens[1][0] == ("key", "lazy")
+        assert tokens[2][2] == ("nam", "lazy")
+        assert tokens[3][0] == ("nam", "lazy")
+
 
 # The default source file encoding.
 DEF_ENCODING = "utf-8"
@@ -163,6 +256,7 @@ ENCODING_DECLARATION_SOURCES = [
     (2, b"# -*-  coding:cp850 -*-\n# vim: fileencoding=cp850\n", "cp850"),
 ]
 
+
 class SourceEncodingTest(CoverageTest):
     """Tests of source_encoding() for detecting encodings."""
 
@@ -174,7 +268,7 @@ class SourceEncodingTest(CoverageTest):
 
     def test_detect_source_encoding_not_in_comment(self) -> None:
         # Should not detect anything here
-        source = b'def parse(src, encoding=None):\n    pass'
+        source = b"def parse(src, encoding=None):\n    pass"
         assert source_encoding(source) == DEF_ENCODING
 
     def test_dont_detect_source_encoding_on_third_line(self) -> None:
@@ -188,16 +282,16 @@ class SourceEncodingTest(CoverageTest):
 
     def test_bom(self) -> None:
         # A BOM means utf-8.
-        source = b"\xEF\xBB\xBFtext = 'hello'\n"
-        assert source_encoding(source) == 'utf-8-sig'
+        source = b"\xef\xbb\xbftext = 'hello'\n"
+        assert source_encoding(source) == "utf-8-sig"
 
     def test_bom_with_encoding(self) -> None:
-        source = b"\xEF\xBB\xBF# coding: utf-8\ntext = 'hello'\n"
-        assert source_encoding(source) == 'utf-8-sig'
+        source = b"\xef\xbb\xbf# coding: utf-8\ntext = 'hello'\n"
+        assert source_encoding(source) == "utf-8-sig"
 
     def test_bom_is_wrong(self) -> None:
         # A BOM with an explicit non-utf8 encoding is an error.
-        source = b"\xEF\xBB\xBF# coding: cp850\n"
+        source = b"\xef\xbb\xbf# coding: cp850\n"
         with pytest.raises(SyntaxError, match="encoding problem: utf-8"):
             source_encoding(source)
 

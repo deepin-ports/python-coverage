@@ -1,23 +1,35 @@
 # Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-# For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+# For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
 """Summary reporting"""
 
+# pragma: enforce 100% coverage
+
 from __future__ import annotations
 
+import string
 import sys
-
-from typing import Any, IO, Iterable, List, Optional, Tuple, TYPE_CHECKING
+from collections.abc import Iterable
+from typing import IO, TYPE_CHECKING, Any
 
 from coverage.exceptions import ConfigError, NoDataError
-from coverage.misc import human_sorted_items
+from coverage.misc import human_sorted_items, neutralize_control, plural
 from coverage.plugin import FileReporter
 from coverage.report_core import get_analysis_to_report
 from coverage.results import Analysis, Numbers
-from coverage.types import TMorf
+from coverage.types import TMorfs
 
 if TYPE_CHECKING:
     from coverage import Coverage
+
+MARKDOWN_ESCAPES = str.maketrans(
+    {char: f"\\{char}" for char in string.punctuation if char not in ".,/-"}
+)
+
+
+def escape_markdown(text: str) -> str:
+    """Prefix all characters meaningful in markdown tables with backslashes."""
+    return text.translate(MARKDOWN_ESCAPES)
 
 
 class SummaryReporter:
@@ -27,11 +39,14 @@ class SummaryReporter:
         self.coverage = coverage
         self.config = self.coverage.config
         self.branches = coverage.get_data().has_arcs()
-        self.outfile: Optional[IO[str]] = None
+        self.outfile: IO[str] | None = None
         self.output_format = self.config.format or "text"
         if self.output_format not in {"text", "markdown", "total"}:
             raise ConfigError(f"Unknown report format choice: {self.output_format!r}")
-        self.fr_analysis: List[Tuple[FileReporter, Analysis]] = []
+        # The file names and analyses to show in the report. We keep the names
+        # rather than the FileReporters: a FileReporter holds on to its parsed
+        # source, which adds up to a lot of memory for a large project.
+        self.name_analyses: list[tuple[str, Analysis]] = []
         self.skipped_count = 0
         self.empty_count = 0
         self.total = Numbers(precision=self.config.precision)
@@ -46,12 +61,12 @@ class SummaryReporter:
         """Write a list of strings, joined together."""
         self.write("".join(items))
 
-    def _report_text(
+    def report_text(
         self,
-        header: List[str],
-        lines_values: List[List[Any]],
-        total_line: List[Any],
-        end_lines: List[str],
+        header: list[str],
+        lines_values: list[list[Any]],
+        total_line: list[Any],
+        end_lines: list[str],
     ) -> None:
         """Internal method that prints report data in text format.
 
@@ -74,10 +89,7 @@ class SummaryReporter:
             Cover="{:>{n}}",
             Missing="{:>10}",
         )
-        header_items = [
-            formats[item].format(item, name_len=max_name, n=max_n)
-            for item in header
-        ]
+        header_items = [formats[item].format(item, name_len=max_name, n=max_n) for item in header]
         header_str = "".join(header_items)
         rule = "-" * len(header_str)
 
@@ -85,34 +97,41 @@ class SummaryReporter:
         self.write(header_str)
         self.write(rule)
 
-        formats.update(dict(Cover="{:>{n}}%"), Missing="   {:9}")
+        # Write the data lines
+        formats.update(
+            dict(
+                Cover="{:>{n}}%",
+                Missing="   {:9}",
+            )
+        )
         for values in lines_values:
-            # build string with line values
-            line_items = [
-                formats[item].format(str(value),
-                name_len=max_name, n=max_n-1) for item, value in zip(header, values)
-            ]
-            self.write_items(line_items)
+            self.write_items(
+                (
+                    formats[item].format(str(value), name_len=max_name, n=max_n - 1)
+                    for item, value in zip(header, values)
+                )
+            )
 
         # Write a TOTAL line
         if lines_values:
             self.write(rule)
 
-        line_items = [
-            formats[item].format(str(value),
-            name_len=max_name, n=max_n-1) for item, value in zip(header, total_line)
-        ]
-        self.write_items(line_items)
+        self.write_items(
+            (
+                formats[item].format(str(value), name_len=max_name, n=max_n - 1)
+                for item, value in zip(header, total_line)
+            )
+        )
 
         for end_line in end_lines:
             self.write(end_line)
 
-    def _report_markdown(
+    def report_markdown(
         self,
-        header: List[str],
-        lines_values: List[List[Any]],
-        total_line: List[Any],
-        end_lines: List[str],
+        header: list[str],
+        lines_values: list[list[Any]],
+        total_line: list[Any],
+        end_lines: list[str],
     ) -> None:
         """Internal method that prints report data in markdown format.
 
@@ -122,8 +141,9 @@ class SummaryReporter:
         `end_lines` is a list of ending lines with information about skipped files.
 
         """
+
         # Prepare the formatting strings, header, and column sorting.
-        max_name = max((len(line[0].replace("_", "\\_")) for line in lines_values), default=0)
+        max_name = max((len(escape_markdown(line[0])) for line in lines_values), default=0)
         max_name = max(max_name, len("**TOTAL**")) + 1
         formats = dict(
             Name="| {:{name_len}}|",
@@ -137,26 +157,39 @@ class SummaryReporter:
         max_n = max(len(total_line[header.index("Cover")]) + 6, len(" Cover "))
         header_items = [formats[item].format(item, name_len=max_name, n=max_n) for item in header]
         header_str = "".join(header_items)
-        rule_str = "|" + " ".join(["- |".rjust(len(header_items[0])-1, "-")] +
-            ["-: |".rjust(len(item)-1, "-") for item in header_items[1:]]
+        rule_str = "|" + " ".join(
+            ["- |".rjust(len(header_items[0]) - 1, "-")]
+            + ["-: |".rjust(len(item) - 1, "-") for item in header_items[1:]],
         )
 
         # Write the header
         self.write(header_str)
         self.write(rule_str)
 
+        # Write the data lines
         for values in lines_values:
-            # build string with line values
-            formats.update(dict(Cover="{:>{n}}% |"))
-            line_items = [
-                formats[item].format(str(value).replace("_", "\\_"), name_len=max_name, n=max_n-1)
-                for item, value in zip(header, values)
-            ]
-            self.write_items(line_items)
+            formats.update(
+                dict(
+                    Cover="{:>{n}}% |",
+                )
+            )
+            self.write_items(
+                (
+                    formats[item].format(
+                        escape_markdown(str(value)), name_len=max_name, n=max_n - 1
+                    )
+                    for item, value in zip(header, values)
+                )
+            )
 
         # Write the TOTAL line
-        formats.update(dict(Name="|{:>{name_len}} |", Cover="{:>{n}} |"))
-        total_line_items: List[str] = []
+        formats.update(
+            dict(
+                Name="|{:{name_len}} |",
+                Cover="{:>{n}} |",
+            ),
+        )
+        total_line_items: list[str] = []
         for item, value in zip(header, total_line):
             if value == "":
                 insert = value
@@ -166,10 +199,11 @@ class SummaryReporter:
                 insert = f" **{value}**"
             total_line_items += formats[item].format(insert, name_len=max_name, n=max_n)
         self.write_items(total_line_items)
+
         for end_line in end_lines:
             self.write(end_line)
 
-    def report(self, morfs: Optional[Iterable[TMorf]], outfile: Optional[IO[str]] = None) -> float:
+    def report(self, morfs: TMorfs, outfile: IO[str] | None = None) -> float:
         """Writes a report summarizing coverage statistics per module.
 
         `outfile` is a text-mode file object to write the summary to.
@@ -208,10 +242,9 @@ class SummaryReporter:
         # `lines_values` is list of lists of sortable values.
         lines_values = []
 
-        for (fr, analysis) in self.fr_analysis:
+        for name, analysis in self.name_analyses:
             nums = analysis.numbers
-
-            args = [fr.relative_filename(), nums.n_statements, nums.n_missing]
+            args = [neutralize_control(name), nums.n_statements, nums.n_missing]
             if self.branches:
                 args += [nums.n_branches, nums.n_partial_branches]
             args += [nums.pc_covered_str]
@@ -235,7 +268,7 @@ class SummaryReporter:
             lines_values = human_sorted_items(lines_values, reverse=reverse)
         else:
             lines_values.sort(
-                key=lambda line: (line[sort_idx], line[0]),     # type: ignore[index]
+                key=lambda line: (line[sort_idx], line[0]),
                 reverse=reverse,
             )
 
@@ -250,18 +283,16 @@ class SummaryReporter:
         # Create other final lines.
         end_lines = []
         if self.config.skip_covered and self.skipped_count:
-            file_suffix = "s" if self.skipped_count>1 else ""
             end_lines.append(
-                f"\n{self.skipped_count} file{file_suffix} skipped due to complete coverage."
+                f"\n{plural(self.skipped_count, 'file')} skipped due to complete coverage.",
             )
         if self.config.skip_empty and self.empty_count:
-            file_suffix = "s" if self.empty_count > 1 else ""
-            end_lines.append(f"\n{self.empty_count} empty file{file_suffix} skipped.")
+            end_lines.append(f"\n{plural(self.empty_count, 'empty file')} skipped.")
 
         if self.output_format == "markdown":
-            formatter = self._report_markdown
+            formatter = self.report_markdown
         else:
-            formatter = self._report_text
+            formatter = self.report_text
         formatter(header, lines_values, total_line, end_lines)
 
     def report_one_file(self, fr: FileReporter, analysis: Analysis) -> None:
@@ -269,8 +300,8 @@ class SummaryReporter:
         nums = analysis.numbers
         self.total += nums
 
-        no_missing_lines = (nums.n_missing == 0)
-        no_missing_branches = (nums.n_partial_branches == 0)
+        no_missing_lines = (nums.n_missing == 0)  # fmt: skip
+        no_missing_branches = (nums.n_partial_branches == 0)  # fmt: skip
         if self.config.skip_covered and no_missing_lines and no_missing_branches:
             # Don't report on 100% files.
             self.skipped_count += 1
@@ -278,4 +309,4 @@ class SummaryReporter:
             # Don't report on empty files.
             self.empty_count += 1
         else:
-            self.fr_analysis.append((fr, analysis))
+            self.name_analyses.append((fr.relative_filename(), analysis))

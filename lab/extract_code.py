@@ -1,18 +1,18 @@
 # Licensed under the Apache License: http://www.apache.org/licenses/LICENSE-2.0
-# For details: https://github.com/nedbat/coveragepy/blob/master/NOTICE.txt
+# For details: https://github.com/coveragepy/coveragepy/blob/main/NOTICE.txt
 
 """
 Use this to copy some indented code from the coverage.py test suite into a
 standalone file for deeper testing, or writing bug reports.
 
-Give it a file name and a line number, and it will find the indentend
-multiline string containing that line number, and output the dedented
+Give it a file name and a line number, and it will find the indented
+multi-line string containing that line number, and output the dedented
 contents of the string.
 
 If tests/test_arcs.py has this (partial) content::
 
     1630	    def test_partial_generators(self):
-    1631	        # https://github.com/nedbat/coveragepy/issues/475
+    1631	        # https://github.com/coveragepy/coveragepy/issues/475
     1632	        # Line 2 is executed completely.
     1633	        # Line 3 is started but not finished, because zip ends before it finishes.
     1634	        # Line 4 is never started.
@@ -52,7 +52,7 @@ else:
     fname, lineno = sys.argv[1:]
 lineno = int(lineno)
 
-with open(fname) as code_file:
+with open(fname, encoding="utf-8") as code_file:
     lines = ["", *code_file]
 
 # Find opening triple-quote
@@ -61,12 +61,12 @@ for start in range(lineno, 0, -1):
     if "'''" in line or '"""' in line:
         break
 
-for end in range(lineno+1, len(lines)):
+for end in range(lineno + 1, len(lines)):
     line = lines[end]
     if "'''" in line or '"""' in line:
         break
 
-code = "".join(lines[start+1: end])
+code = "".join(lines[start + 1 : end])
 code = textwrap.dedent(code)
 
 print(code, end="")
